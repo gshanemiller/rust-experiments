@@ -1,0 +1,20 @@
+[package]
+name = "calloc"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+# on or off
+stats = []
+logOff = []
+logError = []
+logWarn = []
+logInfo = []
+logDebug = []
+logTrace = []
+logStat = []
+debugDefaultAllocator = []
+default = ["stats", "debugDefaultAllocator"]
+
+[dependencies]
+libc = "0.2"

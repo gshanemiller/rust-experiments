@@ -1,0 +1,40 @@
+
+#[allow(non_snake_case)] really? bs
+
+
+note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default  ok mom
+
+   Compiling calloc v0.1.0 (/home/smiller53/Dev/rust-experiments/calloc)
+warning: fields `delegate` and `layout` are never read
+  --> src/main.rs:83:3
+   |
+82 | struct DefaultAllocator {
+   |        ---------------- fields in this struct
+83 |   delegate: System,
+   |   ^^^^^^^^
+84 |   layout: Option<Layout>,
+   |   ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+
+arning: static variable `GlobalStats` should have an upper case name
+   --> src/main.rs:208:8
+    |
+208 | static GlobalStats: Mutex<Option<AllocStats>> = Mutex::new(None);
+
+
+
+
+
+
+
+
+
+you cannot unwrap in const function? not changing self
+impl AllocStats {                                                                                                       
+  pub const fn new(capacity: usize) -> Self {                                                                           
+    let cstr: &CStr = CStr::from_bytes_with_nul(b"create AllocStats with capacity %lu\n\0").unwrap();                   
+    unsafe {                                                                                                            
+      printf(cstr.as_ptr(), capacity);                                                                                  
+    } 

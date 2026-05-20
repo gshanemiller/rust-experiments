@@ -1,0 +1,13 @@
+[package]
+name = "log"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+# on or off
+stats = []
+debugDefaultAllocator = []
+default = ["stats", "debugDefaultAllocator"]
+
+[dependencies]
+log = {version="0.4", features = ["max_level_error", "release_max_level_warn"]}
