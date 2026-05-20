@@ -38,3 +38,29 @@ impl AllocStats {
     unsafe {                                                                                                            
       printf(cstr.as_ptr(), capacity);                                                                                  
     } 
+
+
+
+for logging what is all this atomic nonsense?
+arning: 250	/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/ops/function.rs: No such file or directory
+(gdb) 
+core::cmp::Ordering::is_le (self=core::cmp::Ordering::Equal) at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/cmp.rs:519
+warning: 519	/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/cmp.rs: No such file or directory
+(gdb) 
+core::option::Option<core::cmp::Ordering>::is_some_and<core::cmp::Ordering, fn(core::cmp::Ordering) -> bool> (self=...)
+    at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/option.rs:664
+warning: 664	/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/option.rs: No such file or directory
+(gdb) p core::cmp::Ordering
+Attempt to use a type name as an expression
+(gdb) s
+core::cmp::PartialOrd::le<log::Level, log::LevelFilter> (self=0x7fffffffdf98, other=0x55555555c1e8)
+    at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/cmp.rs:1430
+warning: 1430	/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/cmp.rs: No such file or directory
+(gdb) 
+log::max_level () at /home/smiller53/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/lib.rs:1403
+1403	    unsafe { mem::transmute(MAX_LOG_LEVEL_FILTER.load(Ordering::Relaxed)) }
+(gdb) 
+core::sync::atomic::AtomicUsize::load (self=0x5555555b32c8 <log::MAX_LOG_LEVEL_FILTER>, order=core::sync::atomic::Ordering::Relaxed)
+    at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/sync/atomic.rs:2844
+warning: 2844	/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/sync/atomic.rs: No such file or directory
+(gdb)
