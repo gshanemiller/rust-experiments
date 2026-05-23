@@ -1,21 +1,22 @@
-use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::Mutex;
-use std::ffi::CStr;
-use std::os::raw::c_char;
 use std::process;
+use std::ffi::CStr;
+use std::sync::Mutex;
+use std::os::raw::c_char;
+use std::alloc::{GlobalAlloc, Layout, System};
 
 unsafe extern "C" {
   fn printf(format: *const c_char, ...) -> i32;
 }
 
-extern "C" fn process_cleanup_handler() {
+#[cfg(all(feature="debugAllocator", feature="debugAllocatorStats"))]
+extern "C" fn destroyAllocStats() {
   if let Ok(mut guard) = GLOBAL_STATS.lock() {
     *guard = None;
   }
 }
 
+#[cfg(all(feature="debugAllocator", feature="debugAllocatorStats"))]
 #[allow(non_snake_case)]
-#[cfg(all(feature="debugDefaultAllocator", feature="stats"))]
 struct AllocStats {
   d_capacityBytes:        usize,
   d_allocatedBytes:       usize,
@@ -26,8 +27,8 @@ struct AllocStats {
   d_totalAllocatedBytes:  usize,
 }
 
+#[cfg(all(feature="debugAllocator", feature="debugAllocatorStats"))]
 #[allow(non_snake_case)]
-#[cfg(all(feature="debugDefaultAllocator", feature="stats"))]
 impl AllocStats {
   pub const fn new(capacity: usize) -> Self {
     Self {
@@ -50,65 +51,165 @@ impl AllocStats {
   pub fn totalAllocatedBytes(&self) -> usize { return self.d_totalAllocatedBytes; }
   pub fn freeBytes(&self) -> usize { return self.d_capacityBytes-self.d_allocatedBytes; }
 
-  pub fn alloc(&mut self, bytes: usize) {
-    let cstr: &CStr = CStr::from_bytes_with_nul(b"alloc %lu bytes\n\0").unwrap();
-    unsafe {
-      printf(cstr.as_ptr(), bytes);
+  pub fn alloc(&mut self, layout: Layout, delegate: System) -> *mut u8 {
+    // Panic if insufficient memory
+    if layout.size()>self.freeBytes() {
+      self.dump();
+      panic!("cannot alloc {} bytes: insufficient free space", layout.size());
     }
+
+    #[allow(unused_assignments)]
+    let mut ptr = 0 as *mut u8;
+    unsafe {
+      ptr = delegate.alloc(layout);
+      // Panic if bad memory
+      if ptr == 0 as *mut u8 {
+        self.dump();
+        panic!("failed to alloc {} bytes: got zero pointer {:?}", layout.size(), ptr);
+      }
+    }
+
+    // Book keeping
     self.d_allocCount += 1;
-    self.d_allocatedBytes += bytes;
-    self.d_totalAllocatedBytes += bytes;
+    self.d_allocatedBytes += layout.size();
+    self.d_totalAllocatedBytes += layout.size();
     if self.d_allocatedBytes>self.d_maxAllocatedBytes {
       self.d_maxAllocatedBytes = self.d_allocatedBytes;
     }
-    self.dump();
+
+    #[cfg(all(feature="debugAllocatorTrace"))]
+    {
+      let cstr: &CStr = CStr::from_bytes_with_nul(b"alloc %p %lu bytes\n\0").unwrap();
+      unsafe {
+        printf(cstr.as_ptr(), ptr, layout.size());
+      }
+    }
+
+    return ptr;
   }
 
-  pub fn free(&mut self, bytes: usize) {
-    let cstr: &CStr = CStr::from_bytes_with_nul(b"free %lu bytes\n\0").unwrap();
-    let cstr1: &CStr = CStr::from_bytes_with_nul(b"warn: invalid free %lu bytes ignored\n\0").unwrap();
-    unsafe {
-      printf(cstr.as_ptr(), bytes);
-    }
-    if bytes<=self.d_allocatedBytes {
-      self.d_freeCount += 1;
-      self.d_allocatedBytes -= bytes;
-      self.d_totalFreedBytes += bytes;
+  pub fn allocZeroed(&mut self, layout: Layout, delegate: System) -> *mut u8 {
+    // Panic if insufficient memory
+    if layout.size()>self.freeBytes() {
       self.dump();
-    } else {
+      panic!("cannot alloc {} bytes: insufficient free space", layout.size());
+    }
+
+    #[allow(unused_assignments)]
+    let mut ptr = 0 as *mut u8;
+    unsafe {
+      ptr = delegate.alloc_zeroed(layout);
+      // Panic if bad memory
+      if ptr == 0 as *mut u8 {
+        self.dump();
+        panic!("failed to alloc {} bytes: got zero pointer {:?}", layout.size(), ptr);
+      }
+    }
+
+    // Book keeping
+    self.d_allocCount += 1;
+    self.d_allocatedBytes += layout.size();
+    self.d_totalAllocatedBytes += layout.size();
+    if self.d_allocatedBytes>self.d_maxAllocatedBytes {
+      self.d_maxAllocatedBytes = self.d_allocatedBytes;
+    }
+
+    #[cfg(all(feature="debugAllocatorTrace"))]
+    {
+      let cstr: &CStr = CStr::from_bytes_with_nul(b"allocZeroed %p %lu bytes\n\0").unwrap();
       unsafe {
-        printf(cstr1.as_ptr(), bytes);
+        printf(cstr.as_ptr(), ptr, layout.size());
+      }
+    }
+
+    return ptr;
+  }
+
+  pub fn dealloc(&mut self, ptr: *mut u8, layout: Layout, delegate: System) {
+    // Book keeping
+    if layout.size()<=self.d_allocatedBytes {
+      self.d_freeCount += 1;
+      self.d_allocatedBytes -= layout.size();
+      self.d_totalFreedBytes += layout.size();
+      unsafe {
+        delegate.dealloc(ptr, layout);
+      }
+    } else {
+      let cstr1: &CStr = CStr::from_bytes_with_nul(b"warn: invalid free %p %lu bytes (stats not updated\n\0").unwrap();
+      unsafe {
+        printf(cstr1.as_ptr(), ptr, layout.size());
+        delegate.dealloc(ptr, layout);
+      }
+    }
+
+    #[cfg(all(feature="debugAllocatorTrace"))]
+    {
+      let cstr: &CStr = CStr::from_bytes_with_nul(b"free %p %lu bytes\n\0").unwrap();
+      unsafe {
+        printf(cstr.as_ptr(), ptr, layout.size());
       }
     }
   }
 
-  pub fn allocZeroed(&mut self, bytes: usize) {
-    let cstr: &CStr = CStr::from_bytes_with_nul(b"allocZeroed %lu bytes\n\0").unwrap();
-    unsafe {
-      printf(cstr.as_ptr(), bytes);
-    }
-    self.d_allocCount += 1;
-    self.d_allocatedBytes += bytes;
-    self.d_totalAllocatedBytes += bytes;
-    if self.d_allocatedBytes>self.d_maxAllocatedBytes {
-      self.d_maxAllocatedBytes = self.d_allocatedBytes;
-    }
-    self.dump();
-  }
+  pub fn realloc(&mut self, ptr: *mut u8, new_size: usize, layout: Layout, delegate: System) -> *mut u8 {
+    let mut bigger = true;
+    let mut delta: usize = 0;
+    #[allow(unused_assignments)]
+    let mut newPtr = 0 as *mut u8;
 
-  pub fn realloc(&mut self, oldSize: usize, newSize: usize) {
-    let cstr: &CStr = CStr::from_bytes_with_nul(b"resize %lu to %lu bytes\n\0").unwrap();
-    unsafe {
-      printf(cstr.as_ptr(), oldSize, newSize);
+    if new_size==layout.size() {
+      // theoretically this should do nothing, but do it anyway. stats unchanged
+      unsafe {
+        newPtr = delegate.realloc(ptr, layout, new_size);
+      }
+    } else if new_size>layout.size() {
+      delta = new_size-layout.size();
+      if delta>self.freeBytes() {
+        self.dump();
+        panic!("cannot resize {:?} from {} to {} bytes: insufficient space", ptr, layout.size(), new_size);
+      }
+      unsafe {
+        newPtr = delegate.realloc(ptr, layout, new_size);
+      }
+    } else {
+      bigger = false;
+      delta = layout.size() - new_size;
+      unsafe {
+        newPtr = delegate.realloc(ptr, layout, new_size);
+      }
     }
-    if newSize>oldSize {
-      self.d_allocatedBytes += newSize-oldSize;
-      self.d_totalAllocatedBytes += newSize-oldSize;
+
+    // Panic if bad pointer
+    if newPtr == 0 as *mut u8 {
+      self.dump();
+      panic!("failed to resize {:?} from {} to {} bytes: got zero pointer {:?}", ptr, layout.size(), new_size, newPtr);
+    }
+
+    // Book keeping
+    if bigger {
+      // allocated memory
+      self.d_allocCount += 1;
+      self.d_allocatedBytes += delta;
+      self.d_totalAllocatedBytes += delta;
       if self.d_allocatedBytes>self.d_maxAllocatedBytes {
         self.d_maxAllocatedBytes = self.d_allocatedBytes;
       }
+    } else {
+      // freed memory
+      self.d_freeCount += 1;
+      self.d_allocatedBytes -= delta;
+      self.d_totalFreedBytes += delta; 
     }
-    self.dump();
+
+    #[cfg(all(feature="debugAllocatorTrace"))]
+    {
+      let cstr: &CStr = CStr::from_bytes_with_nul(b"resize %p to %p from %lu to %lu bytes\n\0").unwrap();
+      unsafe {
+        printf(cstr.as_ptr(), ptr, newPtr, layout.size(), new_size);
+      }
+    }
+
+    return newPtr;
   }
 
   pub fn dump(&mut self) {
@@ -140,18 +241,20 @@ impl AllocStats {
   }
 }
 
+#[cfg(all(feature="debugAllocator", feature="debugAllocatorStats"))]
 impl Drop for AllocStats {
   fn drop(&mut self) {
     self.dump();
   }
 }
 
+#[cfg(all(feature="debugAllocator"))]
 struct DefaultAllocator {
   delegate: System,
 }
 
+#[cfg(all(feature="debugAllocator"))]
 impl DefaultAllocator {
-  #[cfg(all(feature="debugDefaultAllocator", feature="stats"))]
   pub const fn new() -> Self {
     Self {
       delegate: System,
@@ -159,78 +262,109 @@ impl DefaultAllocator {
   }
 }
 
+#[cfg(all(feature="debugAllocator"))]
 unsafe impl GlobalAlloc for DefaultAllocator {
   unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-    #[cfg(all(feature="debugDefaultAllocator", feature="stats"))]
+    #[cfg(not(feature="debugAllocatorStats"))]
+    {
+      unsafe {
+        let ptr = self.delegate.alloc(layout);
+        let cstr: &CStr = CStr::from_bytes_with_nul(b"alloc %p %lu bytes\n\0").unwrap();
+        printf(cstr.as_ptr(), ptr, layout.size());
+        return ptr;
+      }
+    }
+    #[cfg(all(feature="debugAllocatorStats"))]
     {
       if let Ok(mut guard) = GLOBAL_STATS.lock() {
         if let Some(stats) = guard.as_mut() {
-          stats.alloc(layout.size());
+          return stats.alloc(layout, self.delegate);
         }
       }
-    }
-    unsafe {
-      return self.delegate.alloc(layout);
-    }
-  }
-
-  unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-    #[cfg(all(feature="debugDefaultAllocator", feature="stats"))]
-    {
-      if let Ok(mut guard) = GLOBAL_STATS.lock() {
-        if let Some(stats) = guard.as_mut() {
-          stats.free(layout.size());
-        }
-      }
-    }
-    unsafe {
-      self.delegate.dealloc(ptr, layout);
     }
   }
 
   unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-    #[cfg(all(feature="debugDefaultAllocator", feature="stats"))]
+    #[cfg(not(feature="debugAllocatorStats"))]
+    {
+      unsafe {
+        let ptr = self.delegate.alloc_zeroed(layout);
+        let cstr: &CStr = CStr::from_bytes_with_nul(b"alloc_zeroed %p %lu bytes\n\0").unwrap();
+        printf(cstr.as_ptr(), ptr, layout.size());
+        return ptr;
+      }
+    }
+    #[cfg(all(feature="debugAllocatorStats"))]
     {
       if let Ok(mut guard) = GLOBAL_STATS.lock() {
         if let Some(stats) = guard.as_mut() {
-          stats.allocZeroed(layout.size());
+          return stats.allocZeroed(layout, self.delegate);
         }
       }
-    }
-    unsafe {
-      return self.delegate.alloc_zeroed(layout);
     }
   }
 
-  unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8{
-    #[cfg(all(feature="debugDefaultAllocator", feature="stats"))]
+  unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+    #[cfg(not(feature="debugAllocatorStats"))]
+    {
+      unsafe {
+        self.delegate.dealloc(ptr, layout);
+        let cstr: &CStr = CStr::from_bytes_with_nul(b"free %p %lu bytes\n\0").unwrap();
+        printf(cstr.as_ptr(), ptr, layout.size());
+        return;
+      }
+    }
+    #[cfg(all(feature="debugAllocatorStats"))]
     {
       if let Ok(mut guard) = GLOBAL_STATS.lock() {
         if let Some(stats) = guard.as_mut() {
-          stats.realloc(layout.size(), new_size);
+          stats.dealloc(ptr, layout, self.delegate);
         }
       }
+      return;
     }
-    unsafe {
-      return self.delegate.realloc(ptr, layout, new_size);
+  }
+
+  unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+    #[cfg(not(feature="debugAllocatorStats"))]
+    {
+      unsafe {
+        let ptr = self.delegate.realloc(ptr, layout, new_size);
+        let cstr: &CStr = CStr::from_bytes_with_nul(b"resize %p %lu to %lu bytes\n\0").unwrap();
+        printf(cstr.as_ptr(), ptr, layout.size(), new_size);
+        return ptr;
+      }
+    }
+    #[cfg(all(feature="debugAllocatorStats"))]
+    {
+      if let Ok(mut guard) = GLOBAL_STATS.lock() {
+        if let Some(stats) = guard.as_mut() {
+          return stats.realloc(ptr, new_size, layout, self.delegate);
+        }
+      }
     }
   }
 }
 
+#[cfg(all(feature="debugAllocator", feature="debugAllocatorStats"))]
 static GLOBAL_STATS: Mutex<Option<AllocStats>> = Mutex::new(None);
 
+#[cfg(all(feature="debugAllocator"))]
 #[global_allocator]
 static GLOBAL_ALLOCATOR: DefaultAllocator = DefaultAllocator::new();
 
 fn main() {
-  if let Ok(mut stats) = GLOBAL_STATS.lock() {
-    *stats = Some(AllocStats::new(512*1024));
-  }
+  #[cfg(all(feature="debugAllocator", feature="debugAllocatorStats"))]
+  {
+    if let Ok(mut stats) = GLOBAL_STATS.lock() {
+      *stats = Some(AllocStats::new(512*1024));
+    }
 
-  unsafe {
-    if libc::atexit(process_cleanup_handler) != 0 {
-      eprintln!("Failed to register atexit handler!");
-      process::exit(1);
+    unsafe {
+      if libc::atexit(destroyAllocStats) != 0 {
+        eprintln!("Failed to register atexit handler 'destroyAllocStats'");
+        process::exit(1);
+      }
     }
   }
 

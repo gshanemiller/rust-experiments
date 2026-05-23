@@ -64,3 +64,13 @@ core::sync::atomic::AtomicUsize::load (self=0x5555555b32c8 <log::MAX_LOG_LEVEL_F
     at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/sync/atomic.rs:2844
 warning: 2844	/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/sync/atomic.rs: No such file or directory
 (gdb)
+
+
+
+can write x = *mut u8 = 0 and overwrite later b/c value at 0 not read. ok mom
+
+= help: maybe it is overwritten before being read?
+= note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+Some errors have detailed explanations: E0133, E0317.
+
