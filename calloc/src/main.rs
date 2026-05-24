@@ -9,6 +9,7 @@ unsafe extern "C" {
 }
 
 #[cfg(all(feature="debugAllocator", feature="debugAllocatorStats"))]
+#[allow(non_snake_case)]
 extern "C" fn destroyAllocStats() {
   if let Ok(mut guard) = GLOBAL_STATS.lock() {
     *guard = None;
@@ -279,7 +280,11 @@ unsafe impl GlobalAlloc for DefaultAllocator {
       if let Ok(mut guard) = GLOBAL_STATS.lock() {
         if let Some(stats) = guard.as_mut() {
           return stats.alloc(layout, self.delegate);
+        } else {
+          panic!("internal error: no 'AllocStats' object found");
         }
+      } else {
+        panic!("internal error: could not obtain lock on 'AllocStats'");
       }
     }
   }
@@ -299,7 +304,11 @@ unsafe impl GlobalAlloc for DefaultAllocator {
       if let Ok(mut guard) = GLOBAL_STATS.lock() {
         if let Some(stats) = guard.as_mut() {
           return stats.allocZeroed(layout, self.delegate);
+        } else {
+          panic!("internal error: no 'AllocStats' object found");
         }
+      } else {
+        panic!("internal error: could not obtain lock on 'AllocStats'");
       }
     }
   }
@@ -319,7 +328,11 @@ unsafe impl GlobalAlloc for DefaultAllocator {
       if let Ok(mut guard) = GLOBAL_STATS.lock() {
         if let Some(stats) = guard.as_mut() {
           stats.dealloc(ptr, layout, self.delegate);
+        } else {
+          panic!("internal error: no 'AllocStats' object found");
         }
+      } else {
+        panic!("internal error: could not obtain lock on 'AllocStats'");
       }
       return;
     }
@@ -340,7 +353,11 @@ unsafe impl GlobalAlloc for DefaultAllocator {
       if let Ok(mut guard) = GLOBAL_STATS.lock() {
         if let Some(stats) = guard.as_mut() {
           return stats.realloc(ptr, new_size, layout, self.delegate);
+        } else {
+          panic!("internal error: no 'AllocStats' object found");
         }
+      } else {
+        panic!("internal error: could not obtain lock on 'AllocStats'");
       }
     }
   }
@@ -354,10 +371,12 @@ static GLOBAL_STATS: Mutex<Option<AllocStats>> = Mutex::new(None);
 static GLOBAL_ALLOCATOR: DefaultAllocator = DefaultAllocator::new();
 
 fn main() {
+  println!("in main");
   #[cfg(all(feature="debugAllocator", feature="debugAllocatorStats"))]
   {
     if let Ok(mut stats) = GLOBAL_STATS.lock() {
       *stats = Some(AllocStats::new(512*1024));
+      println!("made stats");
     }
 
     unsafe {

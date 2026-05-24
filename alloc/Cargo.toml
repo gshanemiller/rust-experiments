@@ -3,4 +3,11 @@ name = "alloc"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+debugAllocator = []
+debugAllocatorStats = []
+debugAllocatorTrace = []
+default = ["debugAllocator", "debugAllocatorStats" , "debugAllocatorTrace"]
+
 [dependencies]
+libc = "0.2"

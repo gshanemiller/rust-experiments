@@ -1,0 +1,6 @@
+there is a race condition between installing the allocstats object and use of allocator.
+this approach is dumb.
+
+do not fiddle with global allocator.
+
+use custom allocators per container and side step all this noise
