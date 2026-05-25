@@ -6,7 +6,7 @@ edition = "2024"
 [features]
 debugAllocatorStats = []
 debugAllocatorTrace = []
-default = ["debugAllocatorStats" , "debugAllocatorTrace"]
+# default = ["debugAllocatorStats" , "debugAllocatorTrace"]
 
 [dependencies]
 libc = "0.2"

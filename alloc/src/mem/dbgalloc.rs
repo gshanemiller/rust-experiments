@@ -38,8 +38,11 @@ impl DefaultAllocator {
 
 impl Drop for DefaultAllocator {                                                                                              
   fn drop(&mut self) {                                                                                                  
-   let stats = self.allocStats.get();
-   stats.dump();
+    #[cfg(all(feature="debugAllocatorStats"))]
+    {
+      let stats = self.allocStats.get();
+      stats.dump();
+    }
   }                                                                                                                     
 }
 
