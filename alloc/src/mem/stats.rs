@@ -77,15 +77,6 @@ impl Stats {
     self.free(layout.size());
   }
 
-  pub fn countRealloc(&mut self, oldLayout: Layout, newLayout: Layout) {
-    debug_assert!(oldLayout.size()!=newLayout.size());
-    if newLayout.size()>oldLayout.size() {
-      self.alloc(newLayout.size()-oldLayout.size());
-    } else {
-      self.free(oldLayout.size()-newLayout.size());
-    }
-  }
-
   pub fn dump(&self) {
     let cstr1: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: Default Allocator Stats\n\0").unwrap();
     let cstr2: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: -------------------------------------\n\0").unwrap();
@@ -96,7 +87,7 @@ impl Stats {
     let cstr7: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: FreeCount             %lu\n\0").unwrap();
     let cstr8: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: CapacityBytes         %lu\n\0").unwrap();
     let cstr9: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: TotalFreedBytes       %lu\n\0").unwrap();
-    let cstrA: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: TotalAllocatedBytes   %lu\n\n\n\0").unwrap();
+    let cstrA: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: TotalAllocatedBytes   %lu\n\0").unwrap();
     let cstrB: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: PercentAllocated      %-5.2lf\n\0").unwrap();
     let percent = (self.allocatedBytes() as f64)/(self.capacityBytes() as f64) * 100.0;
 
