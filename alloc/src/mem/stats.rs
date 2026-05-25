@@ -76,13 +76,12 @@ impl Stats {
     self.free(layout.size());
   }
 
-  pub fn countRealloc(&mut self, newSize: usize, layout: Layout) {
-    debug_assert!(newSize>0);
-    debug_assert!(layout.size()>0);
-    if newSize>layout.size() {
-      self.alloc(newSize-layout.size());
-    } else if layout.size()>newSize {
-      self.free(layout.size()-newSize);
+  pub fn countRealloc(&mut self, oldLayout: Layout, newLayout: Layout) {
+    debug_assert!(oldLayout.size()!=newLayout.size());
+    if newLayout.size()>oldLayout.size() {
+      self.alloc(newLayout.size()-oldLayout.size());
+    } else {
+      self.free(oldLayout.size()-newLayout.size());
     }
   }
 

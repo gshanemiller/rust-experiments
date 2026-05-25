@@ -27,6 +27,13 @@ impl DefaultAllocator {
       allocStats: Stats::new(capacityBytes).into(),
     }
   }
+
+  pub fn dump(&self) {
+    #[cfg(all(feature="debugAllocatorStats"))] {
+      let stats = self.allocStats.take();
+      stats.dump();
+    }
+  }
 }
 
 #[allow(non_snake_case)]
@@ -152,5 +159,136 @@ unsafe impl Allocator for DefaultAllocator {
       stats.countDealloc(layout);
       self.allocStats.set(stats);
     }
+  }
+
+  unsafe fn grow(&self, ptr: NonNull<u8>, old_layout: Layout, new_layout: Layout)
+    -> Result<NonNull<[u8]>, AllocError> {
+    debug_assert!(new_layout.size()>old_layout.size());
+
+    // Panic if insufficient memory if stats enabled
+    #[cfg(all(feature="debugAllocatorStats"))]
+    {
+      let stats = self.allocStats.take();
+      if (new_layout.size()-old_layout.size())>stats.freeBytes() {
+        stats.dump();
+        panic!("insufficient free space to grow {} bytes to {} bytes on {:?}",
+          old_layout.size(), new_layout.size(), ptr);
+      }
+    }
+
+    // Allocate new, larger size or panic on failure
+    #[allow(unused_assignments)]
+    let mut newPtr = 0 as *mut u8;
+    unsafe {
+      newPtr = self.delegate.alloc(new_layout);
+      if newPtr == 0 as *mut u8 {
+        panic!("allocation to grow {} bytes to {} bytes on {:?} failed: got zero ptr {:?}",
+          old_layout.size(), new_layout.size(), ptr, newPtr);
+      }
+      // Copy the old contents to it and free old memory
+      ptr::copy_nonoverlapping(ptr.as_ptr(), newPtr, old_layout.size());
+      self.deallocate(ptr, old_layout);
+    }
+
+    #[cfg(feature="debugAllocatorTrace")]
+    {
+      unsafe {
+        let cstr: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: grow %p %lu bytes to %p %lu bytes\n\0").unwrap();
+        printf(cstr.as_ptr(), ptr.as_ptr(), old_layout.size(), newPtr, new_layout.size());
+      }
+    }
+
+    // Book keeping
+    #[cfg(all(feature="debugAllocatorStats"))]
+    {
+      let mut stats = self.allocStats.take();
+      stats.countRealloc(old_layout, new_layout);
+      self.allocStats.set(stats);
+    }
+
+    // Good lord! This Rust noise
+    let slice_ptr: *mut [u8] = ptr::slice_from_raw_parts_mut(newPtr, new_layout.size());
+    let non_null_slice = unsafe { NonNull::new_unchecked(slice_ptr) };
+    Ok(non_null_slice)
+  }
+
+  unsafe fn grow_zeroed(&self, ptr: NonNull<u8>, old_layout: Layout, new_layout: Layout)
+    -> Result<NonNull<[u8]>, AllocError> {
+    debug_assert!(new_layout.size()>old_layout.size());
+
+    // Allocate new, larger size or panic on failure
+    #[allow(unused_assignments)]
+    let mut newPtr = 0 as *mut u8;
+    unsafe {
+      newPtr = self.delegate.alloc_zeroed(new_layout);
+      if newPtr == 0 as *mut u8 {
+        panic!("allocation to grow {} bytes to {} bytes on {:?} failed: got zero ptr {:?}",
+          old_layout.size(), new_layout.size(), ptr, newPtr);
+      }
+      // Copy the old contents to it and free old memory
+      ptr::copy_nonoverlapping(ptr.as_ptr(), newPtr, old_layout.size());
+      self.deallocate(ptr, old_layout);
+    }
+
+    #[cfg(feature="debugAllocatorTrace")]
+    {
+      unsafe {
+        let cstr: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: growZeroed %p %lu bytes to %p %lu bytes\n\0").unwrap();
+        printf(cstr.as_ptr(), ptr.as_ptr(), old_layout.size(), newPtr, new_layout.size());
+      }
+    }
+
+    // Book keeping
+    #[cfg(all(feature="debugAllocatorStats"))]
+    {
+      let mut stats = self.allocStats.take();
+      stats.countRealloc(old_layout, new_layout);
+      self.allocStats.set(stats);
+    }
+
+    // Good lord! This Rust noise
+    let slice_ptr: *mut [u8] = ptr::slice_from_raw_parts_mut(newPtr, new_layout.size());
+    let non_null_slice = unsafe { NonNull::new_unchecked(slice_ptr) };
+    Ok(non_null_slice)
+  }
+
+  unsafe fn shrink(&self, ptr: NonNull<u8>, old_layout: Layout, new_layout: Layout)
+    -> Result<NonNull<[u8]>, AllocError> {
+    debug_assert!(new_layout.size()<old_layout.size());
+
+    // Allocate new, smaller size or panic on failure
+    #[allow(unused_assignments)]
+    let mut newPtr = 0 as *mut u8;
+    unsafe {
+      newPtr = self.delegate.alloc(new_layout);
+      if newPtr == 0 as *mut u8 {
+        panic!("allocation to grow {} bytes to {} bytes on {:?} failed: got zero ptr {:?}",
+          old_layout.size(), new_layout.size(), ptr, newPtr);
+      }
+      // Copy the old contents to it and free old memory
+      ptr::copy_nonoverlapping(ptr.as_ptr(), newPtr, old_layout.size());
+      self.deallocate(ptr, old_layout);
+    }
+
+    #[cfg(feature="debugAllocatorTrace")]
+    {
+      unsafe {
+        let cstr: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: shrink %p %lu bytes to %p %lu bytes\n\0").unwrap();
+        printf(cstr.as_ptr(), ptr.as_ptr(), old_layout.size(), newPtr, new_layout.size());
+      }
+    }
+
+    // Book keeping
+    #[cfg(all(feature="debugAllocatorStats"))]
+    {
+      let mut stats = self.allocStats.take();
+      stats.countRealloc(old_layout, new_layout);
+      self.allocStats.set(stats);
+    }
+
+    // Good lord! This Rust noise
+    let slice_ptr: *mut [u8] = ptr::slice_from_raw_parts_mut(newPtr, new_layout.size());
+    let non_null_slice = unsafe { NonNull::new_unchecked(slice_ptr) };
+    Ok(non_null_slice)
   }
 }
