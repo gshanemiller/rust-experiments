@@ -6,6 +6,7 @@ unsafe extern "C" {
   fn printf(format: *const c_char, ...) -> i32;
 }
 
+#[derive(Clone, Copy)]
 #[derive(Debug, Default)]
 #[allow(non_snake_case)]
 pub struct Stats {
@@ -96,7 +97,7 @@ impl Stats {
     let cstr8: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: CapacityBytes         %lu\n\0").unwrap();
     let cstr9: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: TotalFreedBytes       %lu\n\0").unwrap();
     let cstrA: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: TotalAllocatedBytes   %lu\n\n\n\0").unwrap();
-    let cstrB: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: PercentAllocated      %5.2lf\n\0").unwrap();
+    let cstrB: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: PercentAllocated      %-5.2lf\n\0").unwrap();
     let percent = (self.allocatedBytes() as f64)/(self.capacityBytes() as f64) * 100.0;
 
     unsafe {

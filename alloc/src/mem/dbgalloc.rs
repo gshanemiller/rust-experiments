@@ -30,7 +30,7 @@ impl DefaultAllocator {
 
   pub fn dump(&self) {
     #[cfg(all(feature="debugAllocatorStats"))] {
-      let stats = self.allocStats.take();
+      let stats = self.allocStats.get();
       stats.dump();
     }
   }
@@ -42,7 +42,7 @@ unsafe impl Allocator for DefaultAllocator {
     // Panic if insufficient memory if stats enabled
     #[cfg(all(feature="debugAllocatorStats"))]
     {
-      let stats = self.allocStats.take();
+      let stats = self.allocStats.get();
       if layout.size()>stats.freeBytes() {
         stats.dump();
         panic!("insufficient free space to allocate {} bytes", layout.size());
@@ -58,7 +58,7 @@ unsafe impl Allocator for DefaultAllocator {
       if ptr == 0 as *mut u8 {
         #[cfg(all(feature="debugAllocatorStats"))]
         {
-          let stats = self.allocStats.take();
+          let stats = self.allocStats.get();
           stats.dump();
         }
         panic!("failed to alloc {} bytes: got zero pointer {:?}", layout.size(), ptr);
@@ -76,8 +76,10 @@ unsafe impl Allocator for DefaultAllocator {
     // Book keeping
     #[cfg(all(feature="debugAllocatorStats"))]
     {
-      let mut stats = self.allocStats.take();
+      let mut stats = self.allocStats.get();
+      self.dump();
       stats.countAlloc(layout);
+      self.dump();
       self.allocStats.set(stats);
     }
   
@@ -91,7 +93,7 @@ unsafe impl Allocator for DefaultAllocator {
     // Panic if insufficient memory if stats enabled
     #[cfg(all(feature="debugAllocatorStats"))]
     {
-      let stats = self.allocStats.take();
+      let stats = self.allocStats.get();
       if layout.size()>stats.freeBytes() {
         stats.dump();
         panic!("insufficient free space to allocate {} bytes", layout.size());
@@ -107,7 +109,7 @@ unsafe impl Allocator for DefaultAllocator {
       if ptr == 0 as *mut u8 {
         #[cfg(all(feature="debugAllocatorStats"))]
         {
-          let stats = self.allocStats.take();
+          let stats = self.allocStats.get();
           stats.dump();
         }
         panic!("failed to alloc {} bytes: got zero pointer {:?}", layout.size(), ptr);
@@ -125,7 +127,7 @@ unsafe impl Allocator for DefaultAllocator {
     // Book keeping
     #[cfg(all(feature="debugAllocatorStats"))]
     {
-      let mut stats = self.allocStats.take();
+      let mut stats = self.allocStats.get();
       stats.countAlloc(layout);
       self.allocStats.set(stats);
     }
@@ -155,7 +157,7 @@ unsafe impl Allocator for DefaultAllocator {
     // Book keeping
     #[cfg(all(feature="debugAllocatorStats"))]
     {
-      let mut stats = self.allocStats.take();
+      let mut stats = self.allocStats.get();
       stats.countDealloc(layout);
       self.allocStats.set(stats);
     }
@@ -168,7 +170,7 @@ unsafe impl Allocator for DefaultAllocator {
     // Panic if insufficient memory if stats enabled
     #[cfg(all(feature="debugAllocatorStats"))]
     {
-      let stats = self.allocStats.take();
+      let stats = self.allocStats.get();
       if (new_layout.size()-old_layout.size())>stats.freeBytes() {
         stats.dump();
         panic!("insufficient free space to grow {} bytes to {} bytes on {:?}",
@@ -201,7 +203,7 @@ unsafe impl Allocator for DefaultAllocator {
     // Book keeping
     #[cfg(all(feature="debugAllocatorStats"))]
     {
-      let mut stats = self.allocStats.take();
+      let mut stats = self.allocStats.get();
       stats.countRealloc(old_layout, new_layout);
       self.allocStats.set(stats);
     }
@@ -241,7 +243,7 @@ unsafe impl Allocator for DefaultAllocator {
     // Book keeping
     #[cfg(all(feature="debugAllocatorStats"))]
     {
-      let mut stats = self.allocStats.take();
+      let mut stats = self.allocStats.get();
       stats.countRealloc(old_layout, new_layout);
       self.allocStats.set(stats);
     }
@@ -281,7 +283,7 @@ unsafe impl Allocator for DefaultAllocator {
     // Book keeping
     #[cfg(all(feature="debugAllocatorStats"))]
     {
-      let mut stats = self.allocStats.take();
+      let mut stats = self.allocStats.get();
       stats.countRealloc(old_layout, new_layout);
       self.allocStats.set(stats);
     }
