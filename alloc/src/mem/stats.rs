@@ -1,11 +1,16 @@
+#[cfg(all(feature="debugAllocatorStats"))]
 use std::ffi::CStr;
+#[cfg(all(feature="debugAllocatorStats"))]
 use std::alloc::{Layout};
+#[cfg(all(feature="debugAllocatorStats"))]
 use std::os::raw::c_char;
 
+#[cfg(all(feature="debugAllocatorStats"))]
 unsafe extern "C" {
   fn printf(format: *const c_char, ...) -> i32;
 }
 
+#[cfg(all(feature="debugAllocatorStats"))]
 #[derive(Clone, Copy)]
 #[derive(Debug, Default)]
 #[allow(non_snake_case)]
@@ -19,6 +24,7 @@ pub struct Stats {
   d_totalAllocatedBytes:  usize,
 }
 
+#[cfg(all(feature="debugAllocatorStats"))]
 #[allow(non_snake_case)]
 impl Stats {
   pub const fn new(capacity: usize) -> Self {

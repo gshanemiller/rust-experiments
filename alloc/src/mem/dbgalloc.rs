@@ -1,11 +1,17 @@
-use std::ffi::CStr;                                                                                                     
-use std::cell::Cell;
-use std::os::raw::c_char;                                                                                               
 use std::ptr::{self, NonNull};
 use std::alloc::{Allocator, AllocError, Layout, System, GlobalAlloc};
 
+#[cfg(all(feature="debugAllocatorStats"))]
+use std::cell::Cell;
+#[cfg(all(feature="debugAllocatorStats"))]
 use super::stats::Stats;
 
+#[cfg(feature="debugAllocatorTrace")]
+use std::ffi::CStr;                                                                                                     
+#[cfg(feature="debugAllocatorTrace")]
+use std::os::raw::c_char;                                                                                               
+
+#[cfg(feature="debugAllocatorTrace")]
 unsafe extern "C" {
   fn printf(format: *const c_char, ...) -> i32;
 }

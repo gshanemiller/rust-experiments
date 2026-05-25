@@ -6,6 +6,8 @@ use mem::dbgalloc::{DefaultAllocator};
 fn main() {
   let test = DefaultAllocator::new(512*1024);
   let mut data: Vec<u32, DefaultAllocator> = Vec::new_in(test);
+  println!("starting value");
+  data.allocator().dump();
   for i in 0..=100 {
     println!("push {}", i);
     data.push(i);
@@ -16,6 +18,8 @@ fn main() {
     }
   }
   println!("data has {} elements", data.len());
+  println!("ending value");
+  data.allocator().dump();
   println!("drop data");
   drop(data);
 }
