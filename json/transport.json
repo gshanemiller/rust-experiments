@@ -1,0 +1,116 @@
+{
+  "TransportSet": [
+    {
+      "Name": "PrimarySet",
+
+      "HugePageAllocator": [
+        {
+          "Name": "Allocator1",
+          "HugePageCount": 20,
+          "SizeKB": 2048,
+          "ByteAlignment": 8
+        }
+      ],
+
+      "HeapAllocator": [
+        {
+          "Name": "Allocator2",
+          "SizeKB": 120,
+          "ByteAlignment": 8
+        },
+        {
+          "Name": "Allocator3",
+          "SizeKB": 512,
+          "ByteAlignment": 8
+        }
+      ],
+
+      "ChildAllocator": [
+        {
+          "Name": "Allocator4",
+          "ParentName": "Allocator1",
+          "SizeKB": 32,
+          "ByteAlignment": 8
+        },
+        {
+          "Name": "Allocator5",
+          "ParentName": "Allocator1",
+          "SizeKB": 32,
+          "ByteAlignment": 8
+        }
+      ],
+
+      "SRPT": {
+        "Name": "SRPTSchedule",
+        "Capacity": 64,
+        "OverCommitmentCount": 3,
+        "ResponseRingCount": 1024,
+        "RequestRingCount": 1024,
+        "UnscheduledPriority": [
+          346,
+          1106,
+          2233,
+          3836,
+          14660,
+          16384
+        ],
+        "ScheduledPriority": [
+          20333,
+          4294967295
+        ],
+        "Allocator": "Allocator3",
+        "CPUHWcore": 3
+      },
+
+      "NIC": {
+        "Name": "DefaultNic",
+        "MACAddress": "0c:42:a1:7e:a3:ed",
+        "IPV4Address": "10.23.31.190",
+        "PciDeviceId": "0000:05:00.0",
+        "MTUSizeBytes": 1522,
+        "LinkSpeedGbit": 10,
+        "MaximumTransports": 8
+      },
+
+      "RXQ": [
+        {
+          "Name": "RXQ1",
+          "RingSize": 1024,
+          "Allocator": "Allocator4"
+        }
+      ],
+
+      "TXQ": [
+        {
+          "Name": "TXQ1",
+          "RingSize": 1024,
+          "Allocator": "Allocator5"
+        }
+      ],
+
+      "Transport": [
+        {
+          "Name": "Transport1",
+          "CPUHWcore": 3,
+          "QueuePair": {
+            "RXQName": "RXQ1",
+            "TXQName": "TXQ1",
+            "NICName": "DefaultNic"
+          },
+          "IPV4Endpoint": {
+            "Port": 39221,
+            "VLANId": 1
+          },
+          "ErrorIPV4Endpoint": {
+            "Port": 39221,
+            "VLANId": 2
+          },
+          "CallbackCapacity": 8,
+          "ReadyCapacity": 16,
+          "ReserveCapacity": 16,
+          "Allocator": "Allocator2"
+        }
+      ]
+    }
+  ]
+}
