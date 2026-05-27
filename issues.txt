@@ -77,3 +77,14 @@ Some errors have detailed explanations: E0133, E0317.
 
 
 containers with custom alloc not in main branch
+no allocators for strings!!!!!!
+
+
+
+
+
+global allocator override. trait methods pass &self
+therefore cannot mutate data the override struct owns
+even if that data is plain-jane usize. really locked down ...
+in addition the new method is const ... so it is damn hard
+to make data in the override struct ... any mutations are not allowed
