@@ -88,3 +88,35 @@ therefore cannot mutate data the override struct owns
 even if that data is plain-jane usize. really locked down ...
 in addition the new method is const ... so it is damn hard
 to make data in the override struct ... any mutations are not allowed
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+warning: multiple associated constants are never used
+  --> src/cfg/cfgconst.rs:6:9
+   |
+ 5 | impl Constant {
+   | ------------- associated constants in this implementation
+ 6 |   const CPUCoreMin: u32 = 0;
+   |         ^^^^^^^^^^
+ 7 |   const CPUCoreMax: u32 = 255;
+   |         ^^^^^^^^^^
+ 8 |   const VLANIdMin: u32 = 0;
+   |         ^^^^^^^^^
+ 9 |   const VLANIdMax: u32 = 4095;
+   |         ^^^^^^^^^
+10 |   const NUMANodeMin: u32 = 0;
+   
+JFC: I haven't even gotten the place to use these. Rust is a nag!
