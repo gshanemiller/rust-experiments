@@ -11,7 +11,8 @@ static GBLALLOC: GlobalAllocator = GlobalAllocator::new(512*1024);
 
 #[allow(non_snake_case)]
 extern "C" fn dumpGlobalStatsAtExit() {
-  GBLALLOC.dump();
+  let stats = GBLALLOC.stats();
+  stats.dump("GlobalAllocator @ process termination");
 }
 
 fn visit (obj: &JsonValue, prefix: String) {
@@ -89,7 +90,6 @@ fn main() {
 
   visit(&parsed, "root".to_string());
 
-  GBLALLOC.dump();
   let stats = GBLALLOC.stats();
-  stats.dump("Hi!!!!");
+  stats.dump("end-of-main");
 }

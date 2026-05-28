@@ -78,7 +78,6 @@ impl Stats {
   }
 
   pub fn dump(&self, name: &str) {
-    let cstr1: &CStr = CStr::from_bytes_with_nul(b": Allocator Stats\n\0").unwrap();
     let cstr2: &CStr = CStr::from_bytes_with_nul(b"-------------------------------------------\n\0").unwrap();
     let cstr3: &CStr = CStr::from_bytes_with_nul(b"FreeBytes:            %lu\n\0").unwrap();
     let cstr4: &CStr = CStr::from_bytes_with_nul(b"AllocatedBytes        %lu\n\0").unwrap();
@@ -95,7 +94,7 @@ impl Stats {
       for ch in name.chars() {
         putchar(ch as i32);
       }
-      printf(cstr1.as_ptr());
+      putchar('\n' as i32);
       printf(cstr2.as_ptr());
       printf(cstr3.as_ptr(), self.freeBytes());
       printf(cstr4.as_ptr(), self.allocatedBytes());

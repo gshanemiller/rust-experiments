@@ -1,3 +1,4 @@
+#[cfg(feature="debugAllocatorTrace")]
 use std::ffi::CStr;
 #[cfg(feature="debugAllocatorTrace")]
 use std::os::raw::c_char;
@@ -25,11 +26,6 @@ impl GlobalAllocator {
       delegate: System,
       stats: GlobalStats::new(capacityBytes),
     }
-  }
-
-  pub fn dump(&self) {
-    let stats = self.stats.lock().unwrap();
-    stats.dump("GlobalAllocator");
   }
 
   pub fn stats(&self) -> Stats {
