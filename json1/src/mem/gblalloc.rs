@@ -1,8 +1,8 @@
-#[cfg(feature="debugAllocatorTrace")]
 use std::ffi::CStr;
 #[cfg(feature="debugAllocatorTrace")]
 use std::os::raw::c_char;
 
+use super::stats::Stats;
 use super::gblstats::GlobalStats;
 use std::alloc::{Layout, System, GlobalAlloc};
 
@@ -19,7 +19,7 @@ pub struct GlobalAllocator {
 
 #[allow(non_snake_case)]
 impl GlobalAllocator {
-  pub const fn new(capacityBytes: usize, ) -> Self {
+  pub const fn new(capacityBytes: usize) -> Self {
     debug_assert!(capacityBytes>0);
     Self {
       delegate: System,
@@ -29,7 +29,13 @@ impl GlobalAllocator {
 
   pub fn dump(&self) {
     let stats = self.stats.lock().unwrap();
-    stats.dump();
+    stats.dump("GlobalAllocator");
+  }
+
+  pub fn stats(&self) -> Stats {
+    let stats = self.stats.lock().unwrap();
+    let ret = *stats;
+    return ret;
   }
 }
 
@@ -42,8 +48,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
 
     // Panic if insufficient memory if stats enabled
     if layout.size()>stats.freeBytes() {
-      stats.dump();
-      drop(stats);
+      stats.dump("GlobalAllocator");
       panic!("insufficient free space to allocate {} bytes", layout.size());
     }
 
@@ -54,7 +59,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
       ptr = self.delegate.alloc(layout);
       // Panic if bad memory
       if ptr == 0 as *mut u8 {
-        stats.dump();
+        stats.dump("GlobalAllocator");
         drop(stats);
         panic!("failed to alloc {} bytes: got zero pointer {:?}", layout.size(), ptr);
       }
@@ -83,7 +88,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
 
     // Panic if insufficient memory if stats enabled
     if layout.size()>stats.freeBytes() {
-      stats.dump();
+      stats.dump("GlobalAllocator");
       drop(stats);
       panic!("insufficient free space to allocate {} bytes", layout.size());
     }
@@ -95,7 +100,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
       ptr = self.delegate.alloc_zeroed(layout);
       // Panic if bad memory
       if ptr == 0 as *mut u8 {
-        stats.dump();
+        stats.dump("GlobalAllocator");
         drop(stats);
         panic!("failed to alloc {} bytes: got zero pointer {:?}", layout.size(), ptr);
       }
@@ -129,7 +134,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
       }
       stats.countDealloc(layout.size());
     } else {
-      stats.dump();
+      stats.dump("GlobalAllocator");
       drop(stats);
       panic!("internal error: cannot free {:?} {} bytes: underflow in allocatedBytes", ptr, layout.size());
     }
@@ -155,7 +160,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
     if new_size>oldLayout.size() {
       // Panic if insufficient memory if stats enabled
       if (new_size-oldLayout.size())>stats.freeBytes() {
-        stats.dump();
+        stats.dump("GlobalAllocator");
         drop(stats);
         panic!("insufficient free space to reallocate {} to {} bytes", oldLayout.size(), new_size);
       }
@@ -168,7 +173,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
       newPtr = self.delegate.realloc(ptr, oldLayout, new_size);
     }
     if newPtr == 0 as *mut u8 {
-      stats.dump();
+      stats.dump("GlobalAllocator");
       drop(stats);
       panic!("failed to resize {:?} from {} to {} bytes: got zero pointer {:?}", ptr, oldLayout.size(), new_size, newPtr);
     }

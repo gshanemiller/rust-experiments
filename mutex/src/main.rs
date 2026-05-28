@@ -30,7 +30,7 @@ impl Stats {
 struct GlobalStats {
   data: Mutex<Stats>,
 }
-  
+
 impl GlobalStats {
   const fn new(cap: usize) -> Self {
     Self {
@@ -41,7 +41,7 @@ impl GlobalStats {
   fn stats(&self) -> Result<std::sync::MutexGuard<'_, Stats>, PoisonError<std::sync::MutexGuard<'_, Stats>>> {
     return self.data.lock();
   }
-} 
+}
 
 fn createThreads<F>(func: F)
 where

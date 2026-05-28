@@ -7,11 +7,11 @@ mod mem;
 use mem::gblalloc::{GlobalAllocator};
 
 #[global_allocator]
-static GLOBAL_ALLOCATOR: GlobalAllocator = GlobalAllocator::new(512);
+static GBLALLOC: GlobalAllocator = GlobalAllocator::new(512*1024);
 
-#[allow(non_snake_case)]                                                                                                
-extern "C" fn dumpGlobalStatsAtExit() {                                                                                     
-  GLOBAL_ALLOCATOR.dump();
+#[allow(non_snake_case)]
+extern "C" fn dumpGlobalStatsAtExit() {
+  GBLALLOC.dump();
 }
 
 fn visit (obj: &JsonValue, prefix: String) {
@@ -72,12 +72,12 @@ fn visitArray(obj: &JsonValue, prefix: String) {
 }
 
 fn main() {
-  unsafe {                                                                                                            
-    if libc::atexit(dumpGlobalStatsAtExit) != 0 {                                                                         
-      eprintln!("Failed to register atexit handler 'destroyAllocStats'");                                             
-      process::exit(1);                                                                                               
-    }                                                                                                                 
-  } 
+  unsafe {
+    if libc::atexit(dumpGlobalStatsAtExit) != 0 {
+      eprintln!("Failed to register atexit handler 'destroyAllocStats'");
+      process::exit(1);
+    }
+  }
 
   let filename = "./transport.json";
   let input = fs::read_to_string(filename).unwrap();
@@ -89,5 +89,7 @@ fn main() {
 
   visit(&parsed, "root".to_string());
 
-  GLOBAL_ALLOCATOR.dump();
+  GBLALLOC.dump();
+  let stats = GBLALLOC.stats();
+  stats.dump("Hi!!!!");
 }

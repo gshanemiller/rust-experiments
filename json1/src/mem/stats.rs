@@ -3,9 +3,12 @@ use std::os::raw::c_char;
 
 unsafe extern "C" {
   fn printf(format: *const c_char, ...) -> i32;
+  fn putchar(ch: i32);
 }
 
+
 #[allow(non_snake_case)]
+#[derive(Copy, Clone)]
 pub struct Stats {
   d_capacityBytes:        usize,
   d_allocatedBytes:       usize,
@@ -18,10 +21,10 @@ pub struct Stats {
 
 #[allow(non_snake_case)]
 impl Stats {
-  pub const fn new(capacity: usize) -> Self {
-    debug_assert!(capacity>0);
+  pub const fn new(capacityBytes: usize) -> Self {
+    debug_assert!(capacityBytes>0);
     Self {
-      d_capacityBytes: capacity,
+      d_capacityBytes: capacityBytes,
       d_allocatedBytes: 0,
       d_maxAllocatedBytes: 0,
       d_freeCount: 0,
@@ -74,21 +77,24 @@ impl Stats {
     self.free(bytes);
   }
 
-  pub fn dump(&self) {
-    let cstr1: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: Default Allocator Stats\n\0").unwrap();
-    let cstr2: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: -------------------------------------\n\0").unwrap();
-    let cstr3: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: FreeBytes:            %lu\n\0").unwrap();
-    let cstr4: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: AllocatedBytes        %lu\n\0").unwrap();
-    let cstr5: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: MaxAllocatedBytes     %lu\n\0").unwrap();
-    let cstr6: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: AllocCount            %lu\n\0").unwrap();
-    let cstr7: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: FreeCount             %lu\n\0").unwrap();
-    let cstr8: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: CapacityBytes         %lu\n\0").unwrap();
-    let cstr9: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: TotalFreedBytes       %lu\n\0").unwrap();
-    let cstrA: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: TotalAllocatedBytes   %lu\n\0").unwrap();
-    let cstrB: &CStr = CStr::from_bytes_with_nul(b"dfltAlloc: PercentAllocated      %-5.2lf\n\0").unwrap();
+  pub fn dump(&self, name: &str) {
+    let cstr1: &CStr = CStr::from_bytes_with_nul(b": Allocator Stats\n\0").unwrap();
+    let cstr2: &CStr = CStr::from_bytes_with_nul(b"-------------------------------------------\n\0").unwrap();
+    let cstr3: &CStr = CStr::from_bytes_with_nul(b"FreeBytes:            %lu\n\0").unwrap();
+    let cstr4: &CStr = CStr::from_bytes_with_nul(b"AllocatedBytes        %lu\n\0").unwrap();
+    let cstr5: &CStr = CStr::from_bytes_with_nul(b"MaxAllocatedBytes     %lu\n\0").unwrap();
+    let cstr6: &CStr = CStr::from_bytes_with_nul(b"AllocCount            %lu\n\0").unwrap();
+    let cstr7: &CStr = CStr::from_bytes_with_nul(b"FreeCount             %lu\n\0").unwrap();
+    let cstr8: &CStr = CStr::from_bytes_with_nul(b"CapacityBytes         %lu\n\0").unwrap();
+    let cstr9: &CStr = CStr::from_bytes_with_nul(b"TotalFreedBytes       %lu\n\0").unwrap();
+    let cstrA: &CStr = CStr::from_bytes_with_nul(b"TotalAllocatedBytes   %lu\n\0").unwrap();
+    let cstrB: &CStr = CStr::from_bytes_with_nul(b"PercentAllocated      %-5.2lf\n\0").unwrap();
     let percent = (self.allocatedBytes() as f64)/(self.capacityBytes() as f64) * 100.0;
 
     unsafe {
+      for ch in name.chars() {
+        putchar(ch as i32);
+      }
       printf(cstr1.as_ptr());
       printf(cstr2.as_ptr());
       printf(cstr3.as_ptr(), self.freeBytes());

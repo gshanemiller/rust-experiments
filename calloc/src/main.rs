@@ -199,7 +199,7 @@ impl AllocStats {
       // freed memory
       self.d_freeCount += 1;
       self.d_allocatedBytes -= delta;
-      self.d_totalFreedBytes += delta; 
+      self.d_totalFreedBytes += delta;
     }
 
     #[cfg(all(feature="debugAllocatorTrace"))]

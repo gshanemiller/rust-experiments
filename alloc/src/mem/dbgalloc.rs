@@ -7,9 +7,9 @@ use std::cell::Cell;
 use super::stats::Stats;
 
 #[cfg(feature="debugAllocatorTrace")]
-use std::ffi::CStr;                                                                                                     
+use std::ffi::CStr;
 #[cfg(feature="debugAllocatorTrace")]
-use std::os::raw::c_char;                                                                                               
+use std::os::raw::c_char;
 
 #[cfg(feature="debugAllocatorTrace")]
 unsafe extern "C" {
@@ -42,14 +42,14 @@ impl DefaultAllocator {
   }
 }
 
-impl Drop for DefaultAllocator {                                                                                              
-  fn drop(&mut self) {                                                                                                  
+impl Drop for DefaultAllocator {
+  fn drop(&mut self) {
     #[cfg(all(feature="debugAllocatorStats"))]
     {
       let stats = self.allocStats.get();
       stats.dump();
     }
-  }                                                                                                                     
+  }
 }
 
 #[allow(non_snake_case)]
@@ -96,7 +96,7 @@ unsafe impl Allocator for DefaultAllocator {
       stats.countAlloc(layout);
       self.allocStats.set(stats);
     }
-  
+
     // Good lord! This Rust noise
     let slice_ptr: *mut [u8] = ptr::slice_from_raw_parts_mut(ptr, layout.size());
     let non_null_slice = unsafe { NonNull::new_unchecked(slice_ptr) };

@@ -6,9 +6,9 @@ pub struct GlobalStats {
 }
 
 impl GlobalStats {
-  pub const fn new(cap: usize) -> Self {
+  pub const fn new(capacityBytes: usize) -> Self {
     Self {
-      stats: Mutex::new(Stats::new(cap)),
+      stats: Mutex::new(Stats::new(capacityBytes)),
     }
   }
 
