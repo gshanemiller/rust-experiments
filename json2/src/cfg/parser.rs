@@ -21,7 +21,7 @@ impl Parser {
     };
 
     // Make sure it's an object
-    if !parsed.is_object() {
+    if !jsonObject.is_object() {
       return Err(Error::JSONSchema);
     }
 
