@@ -10,5 +10,5 @@ debugAllocatorTrace = []
 default = ["debugAllocatorTrace"]
 
 [dependencies]
-tinyjson = "2.5.1"
 libc = "0.2"
+tinyjson = "2.5.1"

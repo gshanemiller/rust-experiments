@@ -3,7 +3,9 @@ use std::process;
 mod mem;
 mod cfg;
 mod err;
+
 use mem::gblalloc::{GlobalAllocator};
+use cfg::parser::Parser;
 
 #[global_allocator]
 static GBLALLOC: GlobalAllocator = GlobalAllocator::new(512*1024);
@@ -21,4 +23,10 @@ fn main() {
       process::exit(1);
     }
   }
+
+  let parserResult = Parser::new("transport.json");
+  let res = match parserResult {
+    Ok(val) => { println!("result {}", val); }
+    Err(err) => { println!("result {:?}", err); }
+  }; 
 }
