@@ -1,11 +1,12 @@
 use std::process;
 
 mod mem;
-mod cfg;
 mod err;
+mod numa;
+mod logger;
 
+use logger::logger::{Logger};
 use mem::gblalloc::{GlobalAllocator};
-use cfg::parser::Parser;
 
 #[global_allocator]
 static GBLALLOC: GlobalAllocator = GlobalAllocator::new(512*1024);
@@ -24,9 +25,11 @@ fn main() {
     }
   }
 
-  let parserResult = Parser::new("transport.json");
-  let res = match parserResult {
-    Ok(val) => { println!("result {}", val); }
-    Err(err) => { println!("result {:?}", err); }
-  }; 
+  match Logger::new() {
+    Ok(_) => {},
+    Err(err) => {
+      println!("Failed to initialize logger: {:?}", err);
+      process::exit(1);
+    }
+  };
 }

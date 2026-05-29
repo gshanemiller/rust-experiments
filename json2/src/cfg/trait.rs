@@ -4,12 +4,20 @@ use super::parserutil::{ParserUtil};
 use super::super::err::error::{Error};
 
 pub trait Verify {
-  fn verify(&self, util: &ParserUtil, obj: &JsonValue) -> Result<(), Error>;
-  fn numaVerify(&self, util: &ParserUtil, obj: &JsonValue) -> Result<(), Error>;
-  fn crossVerify(&self, util: &ParserUtil, obj: &JsonValue) -> Result<(), Error>;
-  fn createAllocators(&self, util: &ParserUtil, obj: &JsonValue) -> Result<(), Error>;
+  fn verify(&self, obj: &JsonValue) -> Result<(), Error>;
 
-  fn parseFile(&self, fname: &str, util: &ParserUtil) -> Result<(), Error> {
+  fn isMacAddress(&self, addr: &String) -> bool {
+  }
+
+  fn isIpv4Address(&self, addr: &String) -> bool {
+  }
+
+  fn isIpv6Address(&self, addr: &String) -> bool {
+  }
+
+  fn 
+
+  fn parseFile(&self, fname: &str) -> Result<(), Error> {
     // Read JSON                                                                                                        
     let jsonResult = fs::read_to_string(fname);                                                                         
     let json = match jsonResult {                                                                                       
@@ -35,24 +43,6 @@ pub trait Verify {
       Err(err) => { return Err(err); }
     };                                                                                                                  
 
-    // Do NUMA verification
-    match self.numaVerify(util, &jsonObject) {
-      Ok(()) => {},
-      Err(err) => { return Err(err); }
-    };                                                                                                                  
-
-    // Do cross verification
-    match self.crossVerify(util, &jsonObject) {
-      Ok(()) => {},
-      Err(err) => { return Err(err); }
-    };                                                                                                                  
-
-    // Make allocators
-    match self.createAllocators(util, &jsonObject) {
-      Ok(()) => {},
-      Err(err) => { return Err(err); }
-    };                                                                                                                  
-                                                                                                                        
     return Ok(());                                                                                                    
   }  
 }

@@ -120,3 +120,14 @@ warning: multiple associated constants are never used
 10 |   const NUMANodeMin: u32 = 0;
    
 JFC: I haven't even gotten the place to use these. Rust is a nag!
+
+
+
+
+
+  let parseResult = u32::from_str_radix(data.trim_end(), 10);                                                           
+  let numaNode = match parseResult {                                                                                    
+    Ok(val) => {                                                                                                        
+      log::trace!(target: "numa", "read '{}': '{:?}' asInt {}", fname, data.trim_end(), val);                           
+      Ok(val) <--- no semicolon or comma?                                                                                                           
+    } 
