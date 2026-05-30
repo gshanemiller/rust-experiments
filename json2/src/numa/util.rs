@@ -1,13 +1,13 @@
 use log;
 use std::fs;
-use super::super::err::error::{Error};
+use crate::err::error::{Error};
 
 fn ubuntuPciNumaNode(addr: &String) -> Result<u32, Error> {
   debug_assert!(addr.len()==12);
   let prefix = &addr[0..7];
   let fname = std::format!("/sys/class/pci_bus/{}/device/{}/numa_node", prefix, addr);
- 
-  // Read data 
+
+  // Read data
   let dataResult = fs::read_to_string(&fname);
   let data = match dataResult {
     Ok(val) => val,
@@ -16,7 +16,7 @@ fn ubuntuPciNumaNode(addr: &String) -> Result<u32, Error> {
       return Err(Error::Io(err));
     }
   };
-  
+
   // Parse data base-10
   let parseResult = u32::from_str_radix(data.trim_end(), 10);
   let numaNode = match parseResult {
@@ -36,7 +36,7 @@ fn ubuntuPciNumaNode(addr: &String) -> Result<u32, Error> {
 fn ubuntuIsCpuOnNumaNode(cpuHwCore: u32, numaNode: u32) -> Result<bool, Error> {
   let fname = std::format!("/sys/devices/system/node/node{}/cpumap", numaNode);
 
-  // Read data 
+  // Read data
   let dataResult = fs::read_to_string(&fname);
   let data = match dataResult {
     Ok(val) => val,
@@ -45,7 +45,7 @@ fn ubuntuIsCpuOnNumaNode(cpuHwCore: u32, numaNode: u32) -> Result<bool, Error> {
       return Err(Error::Io(err));
     }
   };
-  
+
   // Parse data base-16
   let parseResult = u64::from_str_radix(data.trim_end(), 16);
   let cpuMask = match parseResult {
@@ -75,7 +75,7 @@ pub fn isCpuOnNumaNode(cpuHwCore: u32, numaNode: u32) -> Result<bool, Error> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  
+
   #[test]
   fn testPciNumaNode() {
     let addr = "0000:05:00.0".to_string();
@@ -85,7 +85,7 @@ mod tests {
       Err(err) => { println!("failed error: {:?}", err); assert!(false); }
     }
   }
-  
+
   #[test]
   fn testIsCpuOnNumaNode() {
     let result = isCpuOnNumaNode(0,0);

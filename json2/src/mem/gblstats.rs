@@ -1,4 +1,4 @@
-use super::stats::Stats;
+use crate::mem::stats::Stats;
 use std::sync::{Mutex, PoisonError};
 
 pub struct GlobalStats {

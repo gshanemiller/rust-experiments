@@ -3,8 +3,8 @@ use std::ffi::CStr;
 #[cfg(feature="debugAllocatorTrace")]
 use std::os::raw::c_char;
 
-use super::stats::Stats;
-use super::gblstats::GlobalStats;
+use crate::mem::stats::Stats;
+use crate::mem::gblstats::GlobalStats;
 use std::alloc::{Layout, System, GlobalAlloc};
 
 #[cfg(feature="debugAllocatorTrace")]

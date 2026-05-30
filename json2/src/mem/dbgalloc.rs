@@ -6,7 +6,7 @@ use std::alloc::{Allocator, AllocError, Layout, System, GlobalAlloc};
 #[cfg(all(feature="debugAllocatorStats", feature="customAllocators"))]
 use std::cell::Cell;
 #[cfg(all(feature="debugAllocatorStats", feature="customAllocators"))]
-use super::stats::Stats;
+use crate::mem::stats::Stats;
 
 #[cfg(all(feature="debugAllocatorTrace", feature="customAllocators"))]
 use std::ffi::CStr;

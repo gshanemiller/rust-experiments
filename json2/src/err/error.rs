@@ -14,6 +14,7 @@ pub enum Error {
   DupReference,
   OutOfRange,
   SRPTPriority,
+  InvalidFormat,
   Io(io::Error),
   Num(num::ParseIntError),
 }
