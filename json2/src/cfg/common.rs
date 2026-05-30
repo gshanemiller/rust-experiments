@@ -153,13 +153,14 @@ impl SRPT {
     ret = ret && self.cpuHwCore<=limit::Constant::CPUCoreMax;
 
     // Make sure non-zero increasing only
-    for (i, val) in self.unscheduledPriority {
+    let 
+    for val in self.unscheduledPriority.iter().enumerate() {
       ret = ret && val>0;
       if i>0 {
         ret = ret && val>self.unscheduledPriority[i-1];
       }
     }
-    for (i, val) in self.scheduledPriority {
+    for val in self.scheduledPriority.iter().enumerate() {
       ret = ret && val>0;
       if i>0 {
         ret = ret && val>self.scheduledPriority[i-1];
