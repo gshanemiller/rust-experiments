@@ -7,17 +7,17 @@ pub trait Verify {
 
   fn isPciAddress(&self, addr: &String) -> Result<(), error::Error> {
     let mut ret = true;
-    let mut numbCount = 0;
+    let mut count = 0;
     for num in addr.split(&[':','.']) {
-      numbCount += 1;
+      count += 1;
       let parseResult = u32::from_str_radix(num, 16);
       let val = match parseResult {
         Ok(val) => val,
         Err(err) => { return Err(error::Error::Num(err)); }
       };
-      if numbCount==1 {
+      if count==1 {
         ret = ret && val<=65535;
-      } else if numbCount>=1 && numCount<=3 {
+      } else if count>=1 && count<=3 {
         ret = ret && val<=255;
       } else {
         ret = ret && val<=15;
@@ -25,7 +25,7 @@ pub trait Verify {
     }
 
     // PCI is four ints
-    if ret && numbCount==4 {
+    if ret && count==4 {
       return Ok(());
     } else {
       return Err(error::Error::InvalidFormat);
@@ -34,9 +34,9 @@ pub trait Verify {
 
   fn isMacAddress(&self, addr: &String) -> Result<(), error::Error> {
     let mut ret = true;
-    let mut numbCount = 0;
+    let mut count = 0;
     for num in addr.split(":") {
-      numbCount += 1;
+      count += 1;
       let parseResult = u32::from_str_radix(num, 16);
       let val = match parseResult {
         Ok(val) => val,
@@ -47,7 +47,7 @@ pub trait Verify {
     }
 
     // MAC is six ints
-    if ret && numbCount==6 {
+    if ret && count==6 {
       return Ok(());
     } else {
       return Err(error::Error::InvalidFormat);
@@ -56,9 +56,9 @@ pub trait Verify {
 
   fn isIpv4Address(&self, addr: &String) -> Result<(), error::Error> {
     let mut ret = true;
-    let mut numbCount = 0;
+    let mut count = 0;
     for num in addr.split(".") {
-      numbCount += 1;
+      count += 1;
       let parseResult = u32::from_str_radix(num, 10);
       let val = match parseResult {
         Ok(val) => val,
@@ -69,7 +69,7 @@ pub trait Verify {
     }
 
     // IPV4 is four ints
-    if ret && numbCount==4 {
+    if ret && count==4 {
       return Ok(());
     } else {
       return Err(error::Error::InvalidFormat);
@@ -78,9 +78,9 @@ pub trait Verify {
 
   fn isIpv6Address(&self, addr: &String) -> Result<(), error::Error> {
     let mut ret = true;
-    let mut numbCount = 0;
+    let mut count = 0;
     for num in addr.split(":") {
-      numbCount += 1;
+      count += 1;
       let parseResult = u32::from_str_radix(num, 16);
       let val = match parseResult {
         Ok(val) => val,
@@ -91,7 +91,7 @@ pub trait Verify {
     }
 
     // IPV6 is eight ints
-    if ret && numbCount==8 {
+    if ret && count==8 {
       return Ok(());
     } else {
       return Err(error::Error::InvalidFormat);
