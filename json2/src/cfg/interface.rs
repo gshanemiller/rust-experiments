@@ -110,7 +110,7 @@ pub trait Verify {
     let mut parser = JsonParser::new(json.chars());
     let jsonObject = match parser.parse() {
       Ok(val) => val,
-      Err(err) => { return jsonObject; }
+      Err(err) => { return Err(error::Error::JSONError); }
     };
 
     // Make sure it's an object
