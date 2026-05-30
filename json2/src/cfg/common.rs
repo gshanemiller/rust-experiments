@@ -1,5 +1,5 @@
 use crate::cfg::limit;
-use crate::err::error::{Error};
+use crate::err::error;
 
 #[allow(non_snake_case)]
 pub struct HugePage {
@@ -19,7 +19,7 @@ impl HugePage {
     }
   }
 
-  pub fn verify(&self) -> Result<(), Error> {
+  pub fn verify(&self) -> Result<(), error::Error> {
     let mut ret = true;
     let mut found = false;
 
@@ -41,7 +41,7 @@ impl HugePage {
     if ret {
       return Ok(());
     } else {
-      return Err(Error::OutOfRange);
+      return Err(error::Error::OutOfRange);
     }
   }
 }
@@ -60,7 +60,7 @@ impl HeapAllocator {
     }
   }
 
-  pub fn verify(&self) -> Result<(), Error> {
+  pub fn verify(&self) -> Result<(), error::Error> {
     let mut ret = true;
 
     ret = ret && self.sizeKB>0;
@@ -70,7 +70,7 @@ impl HeapAllocator {
     if ret {
       return Ok(());
     } else {
-      return Err(Error::OutOfRange);
+      return Err(error::Error::OutOfRange);
     }
   }
 }
@@ -91,7 +91,7 @@ impl ChildAllocator {
     }
   }
 
-  pub fn verify(&self) -> Result<(), Error> {
+  pub fn verify(&self) -> Result<(), error::Error> {
     let mut ret = true;
 
     ret = ret && self.parentName.len()>0;
@@ -102,11 +102,11 @@ impl ChildAllocator {
     if ret {
       return Ok(());
     } else {
-      return Err(Error::OutOfRange);
+      return Err(error::Error::OutOfRange);
     }
   }
 
-  pub fn crossVerify(&self) -> Result<(), Error> {
+  pub fn crossVerify(&self) -> Result<(), error::Error> {
     return Ok(());
   }
 }
@@ -137,7 +137,7 @@ impl SRPT {
     }
   }
 
-  pub fn verify(&self) -> Result<(), Error> {
+  pub fn verify(&self) -> Result<(), error::Error> {
     let mut ret = true;
 
     ret = ret && self.capacity>=limit::Constant::SRPTCapacityMin;
@@ -171,11 +171,11 @@ impl SRPT {
     if ret {
       return Ok(());
     } else {
-      return Err(Error::OutOfRange);
+      return Err(error::Error::OutOfRange);
     }
   }
 
-  pub fn crossVerify(&self) -> Result<(), Error> {
+  pub fn crossVerify(&self) -> Result<(), error::Error> {
     return Ok(());
   }
 }
@@ -194,7 +194,7 @@ impl VLANPort {
     }
   }
 
-  pub fn verify(&self) -> Result<(), Error> {
+  pub fn verify(&self) -> Result<(), error::Error> {
     let mut ret = true;
 
     ret = ret && self.port>=limit::Constant::IPV4PortMin;
@@ -205,7 +205,7 @@ impl VLANPort {
     if ret {
       return Ok(());
     } else {
-      return Err(Error::OutOfRange);
+      return Err(error::Error::OutOfRange);
     }
   }
 }

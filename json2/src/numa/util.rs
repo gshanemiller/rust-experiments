@@ -1,8 +1,8 @@
 use log;
 use std::fs;
-use crate::err::error::{Error};
+use crate::err::error;
 
-fn ubuntuPciNumaNode(addr: &String) -> Result<u32, Error> {
+fn ubuntuPciNumaNode(addr: &String) -> Result<u32, error::Error> {
   debug_assert!(addr.len()==12);
   let prefix = &addr[0..7];
   let fname = std::format!("/sys/class/pci_bus/{}/device/{}/numa_node", prefix, addr);
@@ -13,7 +13,7 @@ fn ubuntuPciNumaNode(addr: &String) -> Result<u32, Error> {
     Ok(val) => val,
     Err(err) => {
       log::error!(target: "numa", "open '{}': {:?}", fname, err);
-      return Err(Error::Io(err));
+      return Err(error::Error::Io(err));
     }
   };
 
@@ -26,14 +26,14 @@ fn ubuntuPciNumaNode(addr: &String) -> Result<u32, Error> {
     }
     Err(err) => {
       log::error!(target: "numa", "read '{}': '{:?}': {:?}", fname, data.trim_end(), err);
-      return Err(Error::Num(err));
+      return Err(error::Error::Num(err));
     }
   };
 
   return Ok(numaNode);
 }
 
-fn ubuntuIsCpuOnNumaNode(cpuHwCore: u32, numaNode: u32) -> Result<bool, Error> {
+fn ubuntuIsCpuOnNumaNode(cpuHwCore: u32, numaNode: u32) -> Result<bool, error::Error> {
   let fname = std::format!("/sys/devices/system/node/node{}/cpumap", numaNode);
 
   // Read data
@@ -42,7 +42,7 @@ fn ubuntuIsCpuOnNumaNode(cpuHwCore: u32, numaNode: u32) -> Result<bool, Error> {
     Ok(val) => val,
     Err(err) => {
       log::error!(target: "numa", "open '{}': {:?}", fname, err);
-      return Err(Error::Io(err));
+      return Err(error::Error::Io(err));
     }
   };
 
@@ -55,7 +55,7 @@ fn ubuntuIsCpuOnNumaNode(cpuHwCore: u32, numaNode: u32) -> Result<bool, Error> {
     }
     Err(err) => {
       log::error!(target: "numa", "read '{}': '{:?}': {:?}", fname, data.trim_end(), err);
-      return Err(Error::Num(err));
+      return Err(error::Error::Num(err));
     }
   };
 
@@ -64,11 +64,11 @@ fn ubuntuIsCpuOnNumaNode(cpuHwCore: u32, numaNode: u32) -> Result<bool, Error> {
   return Ok(ok!=0);
 }
 
-pub fn pciNumaNode(addr: &String) -> Result<u32, Error> {
+pub fn pciNumaNode(addr: &String) -> Result<u32, error::Error> {
   return ubuntuPciNumaNode(addr);
 }
 
-pub fn isCpuOnNumaNode(cpuHwCore: u32, numaNode: u32) -> Result<bool, Error> {
+pub fn isCpuOnNumaNode(cpuHwCore: u32, numaNode: u32) -> Result<bool, error::Error> {
   return ubuntuIsCpuOnNumaNode(cpuHwCore, numaNode);
 }
 
