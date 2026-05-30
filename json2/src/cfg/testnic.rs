@@ -254,10 +254,66 @@ impl TestNIC {
       transportMap: HashMap::new(),
     }
   }
+
+  fn jsonInteger(obj: &JsonValue) -> Result<u64, error::Error> {
+    if obj.is_number() {
+      let result: Option<&f64> = obj.get();
+      match result {
+        Some(val) => { if *val>0.0 { return Ok(*val as u64); } }
+        None => {}
+      };
+    }
+    return Err(error::Error::JSONSchema);
+  }
+
+  fn jsonBool(obj: &JsonValue) -> Result<bool, error::Error> {
+    if obj.is_bool() {
+      let result: Option<&bool> = obj.get();
+      match result {
+        Some(val) => { return Ok(*val); }
+        None => {}
+      };
+    }
+    return Err(error::Error::JSONSchema);
+  }
+
+  fn visit(&self, prefix: &str, obj: &JsonValue) -> Result<(), error::Error> {
+    if obj.is_object() {
+      return self.visitObject(prefix, obj);
+    }
+
+    if obj.is_array() {
+      return self.visitArray(prefix, obj);
+    }
+
+    return Err(error::Error::JSONSchema);
+  }
+
+  fn visitObject(&self, prefix: &str, obj: &JsonValue) -> Result<(), error::Error> {
+    let map: &HashMap<_, _> = obj.get().unwrap();
+    for (k, v) in map {
+      let prefix = format!("{}.{}", prefix, k);
+      self.visit(&prefix, &v);
+    }
+    return Ok(());
+  }
+
+  fn visitArray(&self, prefix: &str, obj: &JsonValue) -> Result<(), error::Error> {
+    let vect: &Vec<_> = obj.get().unwrap();
+    for item in vect {
+      self.visit(prefix, &item);
+    }
+    return Ok(());
+  }
 }
 
 impl Verify for TestNIC {
   fn verify(&self, obj: &JsonValue) -> Result<(), error::Error> {
+    let root = "root";
+    let visitResult = match self.visit(&root, obj) {
+      Ok(_) => {},
+      Err(err) => { return Err(err); }
+    };
     return Ok(());
   }
 }
