@@ -1,3 +1,4 @@
+use log;
 use std::fs;
 use crate::err::error;
 use tinyjson::{JsonParser, JsonValue};
@@ -13,11 +14,14 @@ pub trait Verify {
       let parseResult = u32::from_str_radix(num, 16);
       let val = match parseResult {
         Ok(val) => val,
-        Err(err) => { return Err(error::Error::Num(err)); }
+        Err(err) => {
+          log::error!(target: "json", "'{}' is not a valid full PCI address", addr);
+          return Err(error::Error::Num(err));
+        }
       };
       if count==1 {
         ret = ret && val<=65535;
-      } else if count>=1 && count<=3 {
+      } else if count>=2 && count<=3 {
         ret = ret && val<=255;
       } else {
         ret = ret && val<=15;
@@ -40,7 +44,10 @@ pub trait Verify {
       let parseResult = u32::from_str_radix(num, 16);
       let val = match parseResult {
         Ok(val) => val,
-        Err(err) => { return Err(error::Error::Num(err)); }
+        Err(err) => {
+          log::error!("'{}' is not a valid MAC address", addr);
+          return Err(error::Error::Num(err));
+        }
       };
       // MAC in [0,255] by index
       ret = ret && val<=255;
@@ -62,7 +69,10 @@ pub trait Verify {
       let parseResult = u32::from_str_radix(num, 10);
       let val = match parseResult {
         Ok(val) => val,
-        Err(err) => { return Err(error::Error::Num(err)); }
+        Err(err) => {
+          log::error!("'{}' is not a valid MAC address", addr);
+          return Err(error::Error::Num(err));
+        }
       };
       // IPV4 in [0,255] by index
       ret = ret && val<=255;
@@ -84,7 +94,10 @@ pub trait Verify {
       let parseResult = u32::from_str_radix(num, 16);
       let val = match parseResult {
         Ok(val) => val,
-        Err(err) => { return Err(error::Error::Num(err)); }
+        Err(err) => {
+          log::error!("'{}' is not a valid MAC address", addr);
+          return Err(error::Error::Num(err));
+        }
       };
       // IPV6 in [0,65535] by index
       ret = ret && val<=0xffff;
@@ -100,6 +113,7 @@ pub trait Verify {
 
   fn parseFile(&self, fname: &str) -> Result<(), error::Error> {
     // Read JSON
+    log::info!("read '{}'", fname);
     let jsonResult = fs::read_to_string(fname);
     let json = match jsonResult {
       Ok(val) => val,
@@ -107,6 +121,7 @@ pub trait Verify {
     };
 
     // Parse JSON
+    log::info!("parse '{}'", fname);
     let mut parser = JsonParser::new(json.chars());
     let jsonObject = match parser.parse() {
       Ok(val) => val,
@@ -119,6 +134,7 @@ pub trait Verify {
     }
 
     // Parse + verify
+    log::info!("verify '{}'", fname);
     match self.verify(&jsonObject) {
       Ok(()) => {},
       Err(err) => { return Err(err); }
