@@ -15,7 +15,7 @@ pub trait Verify {
       let val = match parseResult {
         Ok(val) => val,
         Err(err) => {
-          log::error!(target: "json", "'{}' is not a valid full PCI address", addr);
+          log::error!("'{}' is not a valid full PCI address", addr);
           return Err(error::Error::Num(err));
         }
       };

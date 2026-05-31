@@ -93,16 +93,25 @@
         {
           "Name": "Transport1",
           "CPU": 3,
-          "QueuePair": {
-            "RXQName": "RXQ1",
-            "TXQName": "TXQ1",
-            "NICName": "DefaultNic"
-          },
+          "QueuePair": [
+            {
+              "RXQName": "RXQ1",
+              "TXQName": "TXQ1"
+            }
+          ],
           "IPV4Endpoint": {
             "Port": 39221,
             "VLANId": 1
           },
           "ErrorIPV4Endpoint": {
+            "Port": 39221,
+            "VLANId": 2
+          },
+          "IPV6Endpoint": {
+            "Port": 39221,
+            "VLANId": 1
+          },
+          "ErrorIPV6Endpoint": {
             "Port": 39221,
             "VLANId": 2
           },

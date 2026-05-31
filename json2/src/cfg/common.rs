@@ -5,6 +5,7 @@ pub struct HugePage {
   pub pageCount: u32,
   pub pageSizeKB: u32,
   pub byteAlignment: u32,
+  //
   pub numaNode: u32,
 }
 

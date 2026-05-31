@@ -14,6 +14,7 @@ struct NIC {
   pub mtuSizeBytes: u32,
   pub linkSpeedGbit: u32,
   pub maxTransports: u32,
+  //
   pub numaNode: u32,
 }
 
@@ -269,6 +270,20 @@ impl Tag {
   pub const MTUSizeBytes: &str = "MTUSizeBytes";
   pub const LinkSpeedGbit: &str = "LinkSpeedGbit";
   pub const MaximumTransports: &str = "MaximumTransports";
+
+  pub const RXQName: &str = "RXQName";
+  pub const TXQName: &str = "TXQName";
+  pub const QueuePair: &str = "QueuePair";
+  pub const ReadyCapacity: &str = "ReadyCapacity";
+  pub const ReserveCapacity: &str = "ReserveCapacity";
+  pub const CallbackCapacity: &str = "CallbackCapacity";
+
+  pub const Port: &str = "Port";
+  pub const VLANId : &str = "VLANId";
+  pub const IPV4Endpoint: &str = "IPV4Endpoint";
+  pub const IPV6Endpoint: &str = "IPV6Endpoint";
+  pub const ErrorIPV4Endpoint: &str = "ErrorIPV4Endpoint";
+  pub const ErrorIPV6Endpoint: &str = "ErrorIPV6Endpoint";
 }
 
 pub struct TestNIC {
@@ -280,6 +295,7 @@ pub struct TestNIC {
   hugePageMap: HashMap<String, common::HugePage>,
   heapAllocMap: HashMap<String, common::HeapAllocator>,
   childAllocMap: HashMap<String, common::ChildAllocator>,
+  transportMap: HashMap<String, Transport>,
 }
 
 impl TestNIC {
@@ -293,6 +309,7 @@ impl TestNIC {
       hugePageMap: HashMap::new(),
       heapAllocMap: HashMap::new(),
       childAllocMap: HashMap::new(),
+      transportMap: HashMap::new(),
     }
   }
 
@@ -323,7 +340,7 @@ impl TestNIC {
         None => {}
       };
     }
-    log::error!(target: "json", "'{}' object '{}.{}' malformed integer", objKind, fqn, key);
+    log::error!("'{}' object '{}.{}' malformed integer", objKind, fqn, key);
     return Err(error::Error::JSONSchema);
   }
 
@@ -335,7 +352,7 @@ impl TestNIC {
         None => {}
       };
     }
-    log::error!(target: "json", "'{}' object '{}.{}' malformed bool", objKind, fqn, key);
+    log::error!("'{}' object '{}.{}' malformed bool", objKind, fqn, key);
     return Err(error::Error::JSONSchema);
   }
 
@@ -348,13 +365,13 @@ impl TestNIC {
         None => {}
       };
     }
-    log::error!(target: "json", "'{}' object '{}.{}' malformed string", objKind, fqn, key);
+    log::error!("'{}' object '{}.{}' malformed string", objKind, fqn, key);
     return Err(error::Error::JSONSchema);
   }
 
   fn jsonArray(jsonObj: &JsonValue, data: &mut [u32], fqn: &String, objKind: &str, key: &str) -> Result<(), error::Error> {
     if !jsonObj.is_array() {
-      log::error!(target: "json", "'{}' object '{}' is not an array", objKind, fqn);
+      log::error!("'{}' object '{}' is not an array", objKind, fqn);
       return Err(error::Error::JSONSchema);
     }
 
@@ -378,7 +395,7 @@ impl TestNIC {
       }
     }
     if !ret {
-      log::error!(target: "json", "'{}' object '{}.{}' is not an valid array of u32 length {}",
+      log::error!("'{}' object '{}.{}' is not an valid array of u32 length {}",
           objKind, fqn, key, data.len());
       return Err(error::Error::JSONSchema);
     } else {
@@ -394,7 +411,7 @@ impl TestNIC {
     // parentObj[Tag::Name] risks panic if does not exist
     let map: &HashMap<_, _> = parentObj.get().unwrap();
     if !map.contains_key(Tag::Name) {
-      log::error!(target: "json", "'{}' object '{}' missing name", kind, parentName);
+      log::error!("'{}' object '{}' missing name", kind, parentName);
       return Err(error::Error::JSONSchema);
     }
 
@@ -407,7 +424,7 @@ impl TestNIC {
           if val.len()>0 {
             let fqn = format!("{}.{}", parentName, val);
             if nameMap.contains_key(&fqn) {
-              log::error!(target: "json", "'{}' object '{}' duplicate name", kind, fqn);
+              log::error!("'{}' object '{}' duplicate name", kind, fqn);
               return Err(error::Error::JSONSchema);
             }
             nameMap.insert(fqn.clone(), true);
@@ -418,14 +435,14 @@ impl TestNIC {
       };
     }
 
-    log::error!(target: "json", "'{}' object in '{}' field '{}' malformed string", kind, parentName, Tag::Name);
+    log::error!("'{}' object in '{}' field '{}' malformed string", kind, parentName, Tag::Name);
     return Err(error::Error::JSONSchema);
   }
 
   fn parseHugePage(&mut self, parentName: &String, array: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an array
     if !array.is_array() {
-      log::error!(target: "json", "'{}' object '{}' not an array", Tag::HugePage, parentName);
+      log::error!("'{}' object '{}' not an array", Tag::HugePage, parentName);
       return Err(error::Error::JSONSchema);
     }
 
@@ -433,7 +450,7 @@ impl TestNIC {
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
       if !item.is_object() {
-        log::error!(target: "json", "'{}' object '{}' not an array of objects", Tag::HugePage, parentName);
+        log::error!("'{}' object '{}' not an array of objects", Tag::HugePage, parentName);
         return Err(error::Error::JSONSchema);
       }
 
@@ -443,7 +460,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!(target: "json", "verifying  '{}' '{}'", Tag::HugePage, fqn);
+      log::debug!("verifying  '{}' '{}'", Tag::HugePage, fqn);
 
       // Create huge page object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -474,7 +491,7 @@ impl TestNIC {
             };
           }
           other => {
-            log::error!(target: "json", "'{}' object '{}.{}' unknown", Tag::HugePage, fqn, key);
+            log::error!("'{}' object '{}.{}' unknown", Tag::HugePage, fqn, key);
             return Err(error::Error::JSONSchema);
           }
         }
@@ -484,7 +501,7 @@ impl TestNIC {
       match hp.verify() {
         Ok(()) => {}
         Err(err) => {
-          log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::HugePage, fqn, err);
+          log::error!("'{}' object '{}' invalid contents: {:?}", Tag::HugePage, fqn, err);
           return Err(err);
         }
       };
@@ -496,7 +513,7 @@ impl TestNIC {
   fn parseHeapAllocator(&mut self, parentName: &String, array: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an array
     if !array.is_array() {
-      log::error!(target: "json", "'{}' object '{}' not an array", Tag::HeapAllocator, parentName);
+      log::error!("'{}' object '{}' not an array", Tag::HeapAllocator, parentName);
       return Err(error::Error::JSONSchema);
     }
 
@@ -504,7 +521,7 @@ impl TestNIC {
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
       if !item.is_object() {
-        log::error!(target: "json", "'{}' object '{}' not an array of objects", Tag::HeapAllocator, parentName);
+        log::error!("'{}' object '{}' not an array of objects", Tag::HeapAllocator, parentName);
         return Err(error::Error::JSONSchema);
       }
 
@@ -514,7 +531,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!(target: "json", "verifying  '{}' '{}'", Tag::HeapAllocator, fqn);
+      log::debug!("verifying  '{}' '{}'", Tag::HeapAllocator, fqn);
 
       // Create child allocator object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -539,7 +556,7 @@ impl TestNIC {
             };
           }
           other => {
-            log::error!(target: "json", "'{}' object '{}.{}' unknown", Tag::HeapAllocator, fqn, key);
+            log::error!("'{}' object '{}.{}' unknown", Tag::HeapAllocator, fqn, key);
             return Err(error::Error::JSONSchema);
           }
         }
@@ -549,7 +566,7 @@ impl TestNIC {
       match hp.verify() {
         Ok(()) => {}
         Err(err) => {
-          log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::HeapAllocator, fqn, err);
+          log::error!("'{}' object '{}' invalid contents: {:?}", Tag::HeapAllocator, fqn, err);
           return Err(err);
         }
       };
@@ -561,7 +578,7 @@ impl TestNIC {
   fn parseChildAllocator(&mut self, parentName: &String, array: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an array
     if !array.is_array() {
-      log::error!(target: "json", "'{}' object '{}' not an array", Tag::ChildAllocator, parentName);
+      log::error!("'{}' object '{}' not an array", Tag::ChildAllocator, parentName);
       return Err(error::Error::JSONSchema);
     }
 
@@ -569,7 +586,7 @@ impl TestNIC {
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
       if !item.is_object() {
-        log::error!(target: "json", "'{}' object '{}' not an array of objects", Tag::ChildAllocator, parentName);
+        log::error!("'{}' object '{}' not an array of objects", Tag::ChildAllocator, parentName);
         return Err(error::Error::JSONSchema);
       }
 
@@ -579,7 +596,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!(target: "json", "verifying  '{}' '{}'", Tag::ChildAllocator, fqn);
+      log::debug!("verifying  '{}' '{}'", Tag::ChildAllocator, fqn);
 
       // Create child allocator object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -610,7 +627,7 @@ impl TestNIC {
             };
           }
           other => {
-            log::error!(target: "json", "'{}' object '{}.{}' unknown", Tag::ChildAllocator, fqn, key);
+            log::error!("'{}' object '{}.{}' unknown", Tag::ChildAllocator, fqn, key);
             return Err(error::Error::JSONSchema);
           }
         }
@@ -620,7 +637,7 @@ impl TestNIC {
       match hp.verify() {
         Ok(()) => {}
         Err(err) => {
-          log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::ChildAllocator, fqn, err);
+          log::error!("'{}' object '{}' invalid contents: {:?}", Tag::ChildAllocator, fqn, err);
           return Err(err);
         }
       };
@@ -632,7 +649,7 @@ impl TestNIC {
   fn parseSRPT(&mut self, parentName: &String, obj: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an object
     if !obj.is_object() {
-      log::error!(target: "json", "'{}' object '{}' not an object", Tag::SRPT, parentName);
+      log::error!("'{}' object '{}' not an object", Tag::SRPT, parentName);
       return Err(error::Error::JSONSchema);
     }
 
@@ -642,7 +659,7 @@ impl TestNIC {
       Err(err) => { return Err(err); }
     };
 
-    log::debug!(target: "json", "verifying  '{}' '{}'", Tag::SRPT, fqn);
+    log::debug!("verifying  '{}' '{}'", Tag::SRPT, fqn);
 
     // Create SRPT
     debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -703,7 +720,7 @@ impl TestNIC {
           };
         }
         other => {
-          log::error!(target: "json", "'{}' object '{}.{}' unexpected", Tag::SRPT, fqn, key);
+          log::error!("'{}' object '{}.{}' unexpected", Tag::SRPT, fqn, key);
           return Err(error::Error::JSONSchema);
         }
       }
@@ -713,7 +730,7 @@ impl TestNIC {
     match hp.verify() {
       Ok(()) => {}
       Err(err) => {
-        log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::SRPT, fqn, err);
+        log::error!("'{}' object '{}' invalid contents: {:?}", Tag::SRPT, fqn, err);
         return Err(err);
       }
     };
@@ -724,7 +741,7 @@ impl TestNIC {
   fn parseNIC(&mut self, parentName: &String, obj: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an object
     if !obj.is_object() {
-      log::error!(target: "json", "'{}' object '{}' not an object", Tag::NIC, parentName);
+      log::error!("'{}' object '{}' not an object", Tag::NIC, parentName);
       return Err(error::Error::JSONSchema);
     }
 
@@ -734,7 +751,7 @@ impl TestNIC {
       Err(err) => { return Err(err); }
     };
 
-    log::debug!(target: "json", "verifying  '{}' '{}'", Tag::NIC, fqn);
+    log::debug!("verifying  '{}' '{}'", Tag::NIC, fqn);
 
     // Create nIC
     debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -789,7 +806,7 @@ impl TestNIC {
           };
         }
         other => {
-          log::error!(target: "json", "'{}' object '{}.{}' unexpected", Tag::NIC, fqn, key);
+          log::error!("'{}' object '{}.{}' unexpected", Tag::NIC, fqn, key);
           return Err(error::Error::JSONSchema);
         }
       }
@@ -799,7 +816,7 @@ impl TestNIC {
 //  match hp.verify(self) {
 //    Ok(()) => {}
 //    Err(err) => {
-//      log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::NIC, fqn, err);
+//      log::error!("'{}' object '{}' invalid contents: {:?}", Tag::NIC, fqn, err);
 //      return Err(err);
 //    }
 //  };
@@ -810,7 +827,7 @@ impl TestNIC {
   fn parseNICRxq(&mut self, parentName: &String, array: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an array
     if !array.is_array() {
-      log::error!(target: "json", "'{}' object '{}' not an array", Tag::RXQ, parentName);
+      log::error!("'{}' object '{}' not an array", Tag::RXQ, parentName);
       return Err(error::Error::JSONSchema);
     }
 
@@ -818,7 +835,7 @@ impl TestNIC {
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
       if !item.is_object() {
-        log::error!(target: "json", "'{}' object '{}' not an array of objects", Tag::RXQ, parentName);
+        log::error!("'{}' object '{}' not an array of objects", Tag::RXQ, parentName);
         return Err(error::Error::JSONSchema);
       }
 
@@ -828,7 +845,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!(target: "json", "verifying  '{}' '{}'", Tag::RXQ, fqn);
+      log::debug!("verifying  '{}' '{}'", Tag::RXQ, fqn);
 
       // Create NIC queue object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -853,7 +870,7 @@ impl TestNIC {
             };
           }
           other => {
-            log::error!(target: "json", "'{}' object '{}.{}' unknown", Tag::RXQ, fqn, key);
+            log::error!("'{}' object '{}.{}' unknown", Tag::RXQ, fqn, key);
             return Err(error::Error::JSONSchema);
           }
         }
@@ -863,7 +880,7 @@ impl TestNIC {
       match hp.verify() {
         Ok(()) => {}
         Err(err) => {
-          log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::RXQ, fqn, err);
+          log::error!("'{}' object '{}' invalid contents: {:?}", Tag::RXQ, fqn, err);
           return Err(err);
         }
       };
@@ -875,7 +892,7 @@ impl TestNIC {
   fn parseNICTxq(&mut self, parentName: &String, array: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an array
     if !array.is_array() {
-      log::error!(target: "json", "'{}' object '{}' not an array", Tag::TXQ, parentName);
+      log::error!("'{}' object '{}' not an array", Tag::TXQ, parentName);
       return Err(error::Error::JSONSchema);
     }
 
@@ -883,7 +900,7 @@ impl TestNIC {
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
       if !item.is_object() {
-        log::error!(target: "json", "'{}' object '{}' not an array of objects", Tag::TXQ, parentName);
+        log::error!("'{}' object '{}' not an array of objects", Tag::TXQ, parentName);
         return Err(error::Error::JSONSchema);
       }
 
@@ -893,7 +910,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!(target: "json", "verifying  '{}' '{}'", Tag::TXQ, fqn);
+      log::debug!("verifying  '{}' '{}'", Tag::TXQ, fqn);
 
       // Create NIC queue object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -918,7 +935,7 @@ impl TestNIC {
             };
           }
           other => {
-            log::error!(target: "json", "'{}' object '{}.{}' unknown", Tag::TXQ, fqn, key);
+            log::error!("'{}' object '{}.{}' unknown", Tag::TXQ, fqn, key);
             return Err(error::Error::JSONSchema);
           }
         }
@@ -928,10 +945,118 @@ impl TestNIC {
       match hp.verify() {
         Ok(()) => {}
         Err(err) => {
-          log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::TXQ, fqn, err);
+          log::error!("'{}' object '{}' invalid contents: {:?}", Tag::TXQ, fqn, err);
           return Err(err);
         }
       };
+    }
+
+    return Ok(());
+  }
+
+  fn parseTransport(&mut self, parentName: &String, array: &JsonValue) -> Result<(), error::Error> {
+    // Make sure it's an array
+    if !array.is_array() {
+      log::error!("'{}' object '{}' not an array", Tag::Transport, parentName);
+      return Err(error::Error::JSONSchema);
+    }
+
+    // Visit each item in ary
+    let ary: &Vec<_> = array.get().unwrap();
+    for item in ary {
+      if !item.is_object() {
+        log::error!("'{}' object '{}' not an array of objects", Tag::Transport, parentName);
+        return Err(error::Error::JSONSchema);
+      }
+
+      // Make fqn for transport
+      let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::Transport, parentName) {
+        Ok(val) => val,
+        Err(err) => { return Err(err); }
+      };
+
+      log::debug!("verifying  '{}' '{}'", Tag::Transport, fqn);
+
+      // Create transport
+      debug_assert!(self.nameMap.contains_key(fqn.as_str()));
+      debug_assert!(!self.transportMap.contains_key(fqn.as_str()));
+      let mut hp = self.transportMap.entry(fqn.clone()).or_insert(Transport::new());
+
+      // Process required transport fields
+      let map: &HashMap<_, _> = item.get().unwrap();
+      for (key, value) in map {
+        match key.as_str() {
+          Tag::Name => {}
+          Tag::CPU => {
+            match TestNIC::jsonInteger(value, &mut hp.cpu, &fqn, Tag::NIC, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::ReadyCapacity => {
+            match TestNIC::jsonInteger(value, &mut hp.readyCapacity, &fqn, Tag::NIC, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::ReserveCapacity => {
+            match TestNIC::jsonInteger(value, &mut hp.reserveCapacity, &fqn, Tag::NIC, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::CallbackCapacity => {
+            match TestNIC::jsonInteger(value, &mut hp.callbackCapacity, &fqn, Tag::NIC, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          // Tag::IPV4Endpoint => {}
+          // Tag::IPV6Endpoint => {}
+          // Tag::ErrorIPV4Endpoint => {}
+          // Tag::ErrorIPV6Endpoint => {}
+          Tag::QueuePair => {
+            if !value.is_array() {
+              log::error!("'{}' object '{}.{}' not array", Tag::Transport, fqn, key);
+              return Err(error::Error::JSONSchema);
+            }
+            let subAry: &Vec<_> = value.get().unwrap();
+            for subItem in subAry {
+              if !subItem.is_object() {
+                log::error!("'{}' object '{}.{}' not an array of objects", Tag::Transport, fqn, key);
+                return Err(error::Error::JSONSchema);
+              }
+              let mut subHp = NICQueuePair::new(); 
+              let subMap: &HashMap<_, _> = subItem.get().unwrap();
+              for (subKey, subValue) in subMap {
+                match key.as_str() {
+                  Tag::RXQName => {
+                    match TestNIC::jsonString(subValue, &mut subHp.rxq, &fqn, Tag::Transport, subKey) {
+                      Ok(val) => {}
+                      Err(err) => { return Err(err); }
+                    };
+                  }
+                  Tag::TXQName => {
+                    match TestNIC::jsonString(subValue, &mut subHp.txq, &fqn, Tag::Transport, subKey) {
+                      Ok(val) => {}
+                      Err(err) => { return Err(err); }
+                    };
+                  }
+                  other => {
+                    log::error!("'{}' object '{}.{}.{}' unknown", Tag::Transport, fqn, key, subKey);
+                    return Err(error::Error::JSONSchema);
+                  }
+                };
+              }
+              hp.queuePair.push(subHp);
+            }
+          }
+          other => {
+            log::error!("'{}' object '{}.{}' unknown", Tag::Transport, fqn, key);
+            return Err(error::Error::JSONSchema);
+          }
+        }
+      }
     }
 
     return Ok(());
@@ -946,7 +1071,7 @@ impl TestNIC {
       Err(err) => { return Err(err); }
     };
 
-    log::debug!(target: "json", "verifying '{}'", fqn);
+    log::debug!("verifying '{}'", fqn);
 
     // Get inner object then find, parse sub-objects
     let map: &HashMap<_, _> = item.get().unwrap();
@@ -1007,6 +1132,14 @@ impl TestNIC {
       };
     }
 
+    // Parse Transport
+    if map.contains_key(Tag::Transport) {
+      let result = match self.parseTransport(&fqn, &item[Tag::Transport]) {
+        Ok(_) => {},
+        Err(err) => { return Err(err); }
+      };
+    }
+
     return Ok(());
   }
 }
@@ -1015,28 +1148,28 @@ impl Verify for TestNIC {
   fn verify(&mut self, obj: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an object
     if !obj.is_object() {
-      log::error!(target: "json", "malformed JSON");
+      log::error!("malformed JSON");
       return Err(error::Error::JSONSchema);
     }
 
     // Make sure 'TransportSet' exists
     let map: &HashMap<_, _> = obj.get().unwrap();
     if !map.contains_key(Tag::TransportSet) {
-      log::error!(target: "json", "missing '{}' object", Tag::TransportSet);
+      log::error!("missing '{}' object", Tag::TransportSet);
       return Err(error::Error::JSONSchema);
     }
 
     // Make sure TransportSet is an array
     let transportSet = &obj[Tag::TransportSet];
     if !transportSet.is_array() {
-      log::error!(target: "json", "'{}' object not an array", Tag::TransportSet);
+      log::error!("'{}' object not an array", Tag::TransportSet);
       return Err(error::Error::JSONSchema);
     }
 
     // Make sure array has 1+ elements
     let ary: &Vec<_> = transportSet.get().unwrap();
     if ary.len()==0 {
-      log::error!(target: "json", "'{}' object empty array", Tag::TransportSet);
+      log::error!("'{}' object empty array", Tag::TransportSet);
       return Err(error::Error::JSONSchema);
     }
 
