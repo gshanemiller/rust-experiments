@@ -32,7 +32,7 @@ impl NIC {
     }
   }
 
-  pub fn verify(&self, nic: &TestNIC) -> Result<(), error::Error> {
+  pub fn verify(&self, owner: &TestNIC) -> Result<(), error::Error> {
     let mut ret = true;
     let mut found = false;
 
@@ -55,20 +55,20 @@ impl NIC {
     }
     ret = ret && found;
 
-    let mut parseResult = nic.isMacAddress(&self.macAddress);
+    let mut parseResult = owner.isMacAddress(&self.macAddress);
     match parseResult {
       Ok(_) => true,
       Err(_) => { return parseResult; }
     };
 
-    parseResult = nic.isPciAddress(&self.pciAddress);
+    parseResult = owner.isPciAddress(&self.pciAddress);
     match parseResult {
       Ok(_) => true,
       Err(_) => { return parseResult; }
     };
 
     if self.ipv4Address.len()>0 {
-      parseResult = nic.isIpv4Address(&self.ipv4Address);
+      parseResult = owner.isIpv4Address(&self.ipv4Address);
       match parseResult {
         Ok(_) => true,
         Err(_) => { return parseResult; }
@@ -76,7 +76,7 @@ impl NIC {
     }
 
     if self.ipv6Address.len()>0 {
-      parseResult = nic.isIpv6Address(&self.ipv6Address);
+      parseResult = owner.isIpv6Address(&self.ipv6Address);
       match parseResult {
         Ok(_) => true,
         Err(_) => { return parseResult; }
@@ -108,7 +108,7 @@ impl NICQueue {
     }
   }
 
-  pub fn verify(&self, nic: &TestNIC) -> Result<(), error::Error> {
+  pub fn verify(&self) -> Result<(), error::Error> {
     let mut ret = true;
 
     ret = ret && self.ringSize>=limit::Constant::RingCountMin;
@@ -253,23 +253,33 @@ impl Tag {
   pub const HeapAllocator: &str = "HeapAllocator";
   pub const ChildAllocator: &str = "ChildAllocator";
 
-  pub const Cpu: &str = "CPU";
+  pub const CPU: &str = "CPU";
   pub const Capacity: &str = "Capacity";
+  pub const RingSize: &str = "RingSize";
   pub const RequestRingCount: &str = "RequestRingCount";
   pub const ResponseRingCount: &str = "ResponseRingCount";
   pub const ScheduledPriority: &str = "ScheduledPriority";
   pub const UnscheduledPriority: &str = "UnscheduledPriority";
   pub const OverCommitmentCount: &str = "OverCommitmentCount";
+  
+  pub const MACAddress: &str = "MACAddress";
+  pub const IPV4Address: &str = "IPV4Address";
+  pub const IPV6Address: &str = "IPV6Address";
+  pub const PciDeviceId: &str = "PciDeviceId";
+  pub const MTUSizeBytes: &str = "MTUSizeBytes";
+  pub const LinkSpeedGbit: &str = "LinkSpeedGbit";
+  pub const MaximumTransports: &str = "MaximumTransports";
 }
 
 pub struct TestNIC {
   nicMap: HashMap<String, NIC>,
   nameMap: HashMap<String, bool>,
+  rxqMap: HashMap<String, NICQueue>,
+  txqMap: HashMap<String, NICQueue>,
   srptMap: HashMap<String, common::SRPT>,
   hugePageMap: HashMap<String, common::HugePage>,
   heapAllocMap: HashMap<String, common::HeapAllocator>,
   childAllocMap: HashMap<String, common::ChildAllocator>,
-  transportMap: HashMap<String, Transport>,
 }
 
 impl TestNIC {
@@ -277,11 +287,12 @@ impl TestNIC {
     Self {
       nicMap: HashMap::new(),
       nameMap: HashMap::new(),
+      rxqMap: HashMap::new(),
+      txqMap: HashMap::new(),
       srptMap: HashMap::new(),
       hugePageMap: HashMap::new(),
       heapAllocMap: HashMap::new(),
       childAllocMap: HashMap::new(),
-      transportMap: HashMap::new(),
     }
   }
 
@@ -667,7 +678,7 @@ impl TestNIC {
             Err(err) => { return Err(err); }
           };
         }
-        Tag::Cpu => {
+        Tag::CPU => {
           match TestNIC::jsonInteger(value, &mut hp.cpu, &fqn, Tag::SRPT, key) {
             Ok(val) => {}
             Err(err) => { return Err(err); }
@@ -706,6 +717,222 @@ impl TestNIC {
         return Err(err);
       }
     };
+
+    return Ok(());
+  }
+
+  fn parseNIC(&mut self, parentName: &String, obj: &JsonValue) -> Result<(), error::Error> {
+    // Make sure it's an object
+    if !obj.is_object() {
+      log::error!(target: "json", "'{}' object '{}' not an object", Tag::NIC, parentName);
+      return Err(error::Error::JSONSchema);
+    }
+
+    // Make fqn for NIC
+    let fqn = match TestNIC::findAndAddName(obj, &mut self.nameMap, Tag::NIC, parentName) {
+      Ok(val) => val,
+      Err(err) => { return Err(err); }
+    };
+
+    log::debug!(target: "json", "verifying  '{}' '{}'", Tag::NIC, fqn);
+
+    // Create nIC
+    debug_assert!(self.nameMap.contains_key(fqn.as_str()));
+    debug_assert!(!self.nicMap.contains_key(fqn.as_str()));
+    let mut hp = self.nicMap.entry(fqn.clone()).or_insert(NIC::new());
+
+    // Process required NIC fields
+    let map: &HashMap<_, _> = obj.get().unwrap();
+    for (key, value) in map {
+      match key.as_str() {
+        Tag::Name => {}
+        Tag::MACAddress => {
+          match TestNIC::jsonString(value, &mut hp.macAddress, &fqn, Tag::NIC, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
+        }
+        Tag::IPV4Address => {
+          match TestNIC::jsonString(value, &mut hp.ipv4Address, &fqn, Tag::NIC, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
+        }
+        Tag::IPV6Address => {
+          match TestNIC::jsonString(value, &mut hp.ipv6Address, &fqn, Tag::NIC, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
+        }
+        Tag::PciDeviceId => {
+          match TestNIC::jsonString(value, &mut hp.pciAddress, &fqn, Tag::NIC, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
+        }
+        Tag::MTUSizeBytes => {
+          match TestNIC::jsonInteger(value, &mut hp.mtuSizeBytes, &fqn, Tag::NIC, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
+        }
+        Tag::LinkSpeedGbit => {
+          match TestNIC::jsonInteger(value, &mut hp.linkSpeedGbit, &fqn, Tag::NIC, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
+        }
+        Tag::MaximumTransports => {
+          match TestNIC::jsonInteger(value, &mut hp.maxTransports, &fqn, Tag::NIC, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
+        }
+        other => {
+          log::error!(target: "json", "'{}' object '{}.{}' unexpected", Tag::NIC, fqn, key);
+          return Err(error::Error::JSONSchema);
+        }
+      }
+    }
+
+    // Verify contents
+//  match hp.verify(self) {
+//    Ok(()) => {}
+//    Err(err) => {
+//      log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::NIC, fqn, err);
+//      return Err(err);
+//    }
+//  };
+
+    return Ok(());
+  }
+
+  fn parseNICRxq(&mut self, parentName: &String, array: &JsonValue) -> Result<(), error::Error> {
+    // Make sure it's an array
+    if !array.is_array() {
+      log::error!(target: "json", "'{}' object '{}' not an array", Tag::RXQ, parentName);
+      return Err(error::Error::JSONSchema);
+    }
+
+    // Visit each item in ary
+    let ary: &Vec<_> = array.get().unwrap();
+    for item in ary {
+      if !item.is_object() {
+        log::error!(target: "json", "'{}' object '{}' not an array of objects", Tag::RXQ, parentName);
+        return Err(error::Error::JSONSchema);
+      }
+
+      // Make fqn for NIC queue
+      let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::RXQ, parentName) {
+        Ok(val) => val,
+        Err(err) => { return Err(err); }
+      };
+
+      log::debug!(target: "json", "verifying  '{}' '{}'", Tag::RXQ, fqn);
+
+      // Create NIC queue object
+      debug_assert!(self.nameMap.contains_key(fqn.as_str()));
+      debug_assert!(!self.rxqMap.contains_key(fqn.as_str()));
+      let mut hp = self.rxqMap.entry(fqn.clone()).or_insert(NICQueue::new());
+
+      // Find all other key-value pairs
+      let map: &HashMap<_, _> = item.get().unwrap();
+      for (key, value) in map {
+        match key.as_str() {
+          Tag::Name => {}
+          Tag::RingSize => {
+            match TestNIC::jsonInteger(value, &mut hp.ringSize, &fqn, Tag::RXQ, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::AllocatorName => {
+            match TestNIC::jsonString(value, &mut hp.allocatorName, &fqn, Tag::RXQ, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          other => {
+            log::error!(target: "json", "'{}' object '{}.{}' unknown", Tag::RXQ, fqn, key);
+            return Err(error::Error::JSONSchema);
+          }
+        }
+      }
+
+      // Verify contents
+      match hp.verify() {
+        Ok(()) => {}
+        Err(err) => {
+          log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::RXQ, fqn, err);
+          return Err(err);
+        }
+      };
+    }
+
+    return Ok(());
+  }
+
+  fn parseNICTxq(&mut self, parentName: &String, array: &JsonValue) -> Result<(), error::Error> {
+    // Make sure it's an array
+    if !array.is_array() {
+      log::error!(target: "json", "'{}' object '{}' not an array", Tag::TXQ, parentName);
+      return Err(error::Error::JSONSchema);
+    }
+
+    // Visit each item in ary
+    let ary: &Vec<_> = array.get().unwrap();
+    for item in ary {
+      if !item.is_object() {
+        log::error!(target: "json", "'{}' object '{}' not an array of objects", Tag::TXQ, parentName);
+        return Err(error::Error::JSONSchema);
+      }
+
+      // Make fqn for NIC queue
+      let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::TXQ, parentName) {
+        Ok(val) => val,
+        Err(err) => { return Err(err); }
+      };
+
+      log::debug!(target: "json", "verifying  '{}' '{}'", Tag::TXQ, fqn);
+
+      // Create NIC queue object
+      debug_assert!(self.nameMap.contains_key(fqn.as_str()));
+      debug_assert!(!self.txqMap.contains_key(fqn.as_str()));
+      let mut hp = self.txqMap.entry(fqn.clone()).or_insert(NICQueue::new());
+
+      // Find all other key-value pairs
+      let map: &HashMap<_, _> = item.get().unwrap();
+      for (key, value) in map {
+        match key.as_str() {
+          Tag::Name => {}
+          Tag::RingSize => {
+            match TestNIC::jsonInteger(value, &mut hp.ringSize, &fqn, Tag::TXQ, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::AllocatorName => {
+            match TestNIC::jsonString(value, &mut hp.allocatorName, &fqn, Tag::TXQ, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          other => {
+            log::error!(target: "json", "'{}' object '{}.{}' unknown", Tag::TXQ, fqn, key);
+            return Err(error::Error::JSONSchema);
+          }
+        }
+      }
+
+      // Verify contents
+      match hp.verify() {
+        Ok(()) => {}
+        Err(err) => {
+          log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::TXQ, fqn, err);
+          return Err(err);
+        }
+      };
+    }
 
     return Ok(());
   }
@@ -751,6 +978,30 @@ impl TestNIC {
     // Parse SRPT
     if map.contains_key(Tag::SRPT) {
       let result = match self.parseSRPT(&fqn, &item[Tag::SRPT]) {
+        Ok(_) => {},
+        Err(err) => { return Err(err); }
+      };
+    }
+
+    // Parse NIC
+    if map.contains_key(Tag::NIC) {
+      let result = match self.parseNIC(&fqn, &item[Tag::NIC]) {
+        Ok(_) => {},
+        Err(err) => { return Err(err); }
+      };
+    }
+
+    // Parse RXQ
+    if map.contains_key(Tag::RXQ) {
+      let result = match self.parseNICRxq(&fqn, &item[Tag::RXQ]) {
+        Ok(_) => {},
+        Err(err) => { return Err(err); }
+      };
+    }
+
+    // Parse TXQ
+    if map.contains_key(Tag::TXQ) {
+      let result = match self.parseNICTxq(&fqn, &item[Tag::TXQ]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
