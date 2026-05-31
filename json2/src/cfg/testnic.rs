@@ -162,7 +162,7 @@ struct Transport {
   pub readyCapacity: u32,
   pub reserveCapacity: u32,
   pub allocatorName: String,
-  pub cpuHwCore: u32,
+  pub cpu: u32,
 }
 
 impl Transport {
@@ -178,7 +178,7 @@ impl Transport {
       readyCapacity: 0,
       reserveCapacity: 0,
       allocatorName: String::new(),
-      cpuHwCore: 0,
+      cpu: 0,
     }
   }
 
@@ -194,8 +194,8 @@ impl Transport {
     ret = ret && self.reserveCapacity>=limit::Constant::RPCReserveCapacityMin;
     ret = ret && self.reserveCapacity<=limit::Constant::RPCReserveCapacityMax;
     ret = ret && self.allocatorName.len()>0;
-    ret = ret && self.cpuHwCore>=limit::Constant::CPUCoreMin;
-    ret = ret && self.cpuHwCore<=limit::Constant::CPUCoreMax;
+    ret = ret && self.cpu>=limit::Constant::CPUCoreMin;
+    ret = ret && self.cpu<=limit::Constant::CPUCoreMax;
 
     let mut ipv4 = true;
     match self.ipv4Suffix.verify() {
@@ -240,7 +240,8 @@ impl Tag {
 
   pub const SizeKB : &str = "SizeKB";
   pub const ByteAlignment: &str = "ByteAlignment";
-  pub const HugePageCount: &str = "HugePageCount";
+  pub const PageCount: &str = "PageCount";
+  pub const PageSizeKB: &str = "PageSizeKB";
 
   pub const NIC: &str = "NIC";
   pub const RXQ: &str = "RXQ";
@@ -252,8 +253,8 @@ impl Tag {
   pub const HeapAllocator: &str = "HeapAllocator";
   pub const ChildAllocator: &str = "ChildAllocator";
 
+  pub const Cpu: &str = "CPU";
   pub const Capacity: &str = "Capacity";
-  pub const CpuHwCore: &str = "CpuHwCore";
   pub const RequestRingCount: &str = "RequestRingCount";
   pub const ResponseRingCount: &str = "ResponseRingCount";
   pub const ScheduledPriority: &str = "ScheduledPriority";
@@ -284,71 +285,94 @@ impl TestNIC {
     }
   }
 
-  fn createSRPT(&mut self, key: &str) -> Option<&mut common::SRPT> {
-    if !self.nameMap.contains_key(key) && !self.srptMap.contains_key(key) {
-      self.nameMap.insert(key.to_string(), true);
-      return Some(self.srptMap.entry(key.to_string()).or_insert(common::SRPT::new()));
-    }
-    return None;
-  }
-
   fn createHugePage(&mut self, key: &str) -> Option<&mut common::HugePage> {
-    if !self.nameMap.contains_key(key) && !self.hugePageMap.contains_key(key) {
-      self.nameMap.insert(key.to_string(), true);
-      return Some(self.hugePageMap.entry(key.to_string()).or_insert(common::HugePage::new()));
-    }
-    return None;
+    debug_assert!(self.nameMap.contains_key(key));
+    debug_assert!(!self.hugePageMap.contains_key(key));
+    return Some(self.hugePageMap.entry(key.to_string()).or_insert(common::HugePage::new()));
   }
 
   fn createHeapAllocator(&mut self, key: &str) -> Option<&mut common::HeapAllocator> {
-    if !self.nameMap.contains_key(key) && !self.heapAllocMap.contains_key(key) {
-      self.nameMap.insert(key.to_string(), true);
-      return Some(self.heapAllocMap.entry(key.to_string()).or_insert(common::HeapAllocator::new()));
-    }
-    return None;
+    debug_assert!(self.nameMap.contains_key(key));
+    debug_assert!(!self.heapAllocMap.contains_key(key));
+    return Some(self.heapAllocMap.entry(key.to_string()).or_insert(common::HeapAllocator::new()));
   }
 
   fn createChildAllocator(&mut self, key: &str) -> Option<&mut common::ChildAllocator> {
-    if !self.nameMap.contains_key(key) && !self.childAllocMap.contains_key(key) {
-      self.nameMap.insert(key.to_string(), true);
-      return Some(self.childAllocMap.entry(key.to_string()).or_insert(common::ChildAllocator::new()));
-    }
-    return None;
+    debug_assert!(self.nameMap.contains_key(key));
+    debug_assert!(!self.childAllocMap.contains_key(key));
+    return Some(self.childAllocMap.entry(key.to_string()).or_insert(common::ChildAllocator::new()));
   }
 
-  fn jsonInteger(obj: &JsonValue) -> Result<u64, error::Error> {
+  fn jsonInteger(obj: &JsonValue, value: &mut u32, fqn: &String, objKind: &str, key: &str) -> Result<(), error::Error> {
     if obj.is_number() {
       // API forces f64, so make sure it's an integer
       let result: Option<&f64> = obj.get();
       match result {
-        Some(val) => { if *val>=0.0 && val.fract()==0.0 { return Ok(*val as u64); } }
+        Some(val) => { if *val>=0.0 && val.fract()==0.0 { *value = *val as u32; return Ok(()); } }
         None => {}
       };
     }
+    log::error!(target: "json", "'{}' object '{}.{}' malformed integer", objKind, fqn, key);
     return Err(error::Error::JSONSchema);
   }
 
-  fn jsonBool(obj: &JsonValue) -> Result<bool, error::Error> {
+  fn jsonBool(obj: &JsonValue, value: &mut bool, fqn: &String, objKind: &str, key: &str) -> Result<(), error::Error> {
     if obj.is_bool() {
       let result: Option<&bool> = obj.get();
       match result {
-        Some(val) => { return Ok(*val); }
+        Some(val) => { *value = *val; return Ok(()); }
         None => {}
       };
     }
+    log::error!(target: "json", "'{}' object '{}.{}' malformed bool", objKind, fqn, key);
     return Err(error::Error::JSONSchema);
   }
 
-  fn jsonString(obj: &JsonValue) -> Result<String, error::Error> {
+  fn jsonString(obj: &JsonValue, value: &mut String, fqn: &String, objKind: &str, key: &str) -> Result<(), error::Error> {
     if obj.is_string() {
       let result: Option<&String> = obj.get();
       match result {
         // Clone string so when JSON dropped, copy exists
-        Some(val) => { if val.len()>0 { return Ok(val.clone()); } }
+        Some(val) => { if val.len()>0 { *value = val.clone(); return Ok(()); } }
         None => {}
       };
     }
+    log::error!(target: "json", "'{}' object '{}.{}' malformed string", objKind, fqn, key);
     return Err(error::Error::JSONSchema);
+  }
+
+  fn jsonArray(jsonObj: &JsonValue, data: &mut [u32], fqn: &String, objKind: &str, key: &str) -> Result<(), error::Error> {
+    if !jsonObj.is_array() {
+      log::error!(target: "json", "'{}' object '{}' is not an array", objKind, fqn);
+      return Err(error::Error::JSONSchema);
+    }
+
+    // Visit each item in array
+    let mut idx: usize = 0;
+    let ary: &Vec<_> = jsonObj.get().unwrap();
+    let mut ret = ary.len()==data.len();
+
+    if ret {
+      for obj in ary {
+        if !obj.is_number() {
+          ret = false;
+          break;
+        }
+        // API forces f64, so cast
+        let result: Option<&f64> = obj.get();
+        match result {
+          Some(val) => { if *val>=0.0 && val.fract()==0.0 { data[idx] = *val as u32; idx += 1; } }
+          None => { ret = false; }
+        };
+      }
+    }
+    if !ret {
+      log::error!(target: "json", "'{}' object '{}.{}' is not an valid array of u32 length {}",
+          objKind, fqn, key, data.len());
+      return Err(error::Error::JSONSchema);
+    } else {
+      return Ok(());
+    }
   }
 
   fn findAndAddName(parentObj: &JsonValue, nameMap: &mut HashMap<String, bool>, kind: &str, parentName: &str)
@@ -387,35 +411,10 @@ impl TestNIC {
     return Err(error::Error::JSONSchema);
   }
 
-  fn jsonArray(ary: &Vec<JsonValue>, data: &mut [u32], fqn: &String, objKind: &str, key: &str) -> Result<(), error::Error> {
-    let mut idx: usize = 0;
-    let mut ret = ary.len()==data.len();
-    if ret {
-      for obj in ary {
-        if !obj.is_number() {
-          ret = false;
-          break;
-        }
-        // API forces f64, so cast
-        let result: Option<&f64> = obj.get();
-        match result {
-          Some(val) => { if *val>=0.0 && val.fract()==0.0 { data[idx] = *val as u32; idx += 1; } }
-          None => { ret = false; }
-        };
-      }
-    }
-    if !ret {
-      log::error!(target: "json", "'{}' object '{}.{}' is not an valid array of u32 length {}",
-          objKind, fqn, key, data.len());
-      return Err(error::Error::JSONSchema);
-    } else {
-      return Ok(());
-    }
-  }
-
-  fn parseHugePage(&mut self, parentName: &str, array: &JsonValue) -> Result<(), error::Error> {
+  fn parseHugePage(&mut self, parentName: &String, array: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an array
     if !array.is_array() {
+      log::error!(target: "json", "'{}' object '{}' not an array", Tag::HugePage, parentName);
       return Err(error::Error::JSONSchema);
     }
 
@@ -423,65 +422,48 @@ impl TestNIC {
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
       if !item.is_object() {
+        log::error!(target: "json", "'{}' object '{}' not an array of objects", Tag::HugePage, parentName);
         return Err(error::Error::JSONSchema);
       }
 
-      // Access inner hashmap
-      let map: &HashMap<_, _> = item.get().unwrap();
-
-      // Find the huge page name
-      if !map.contains_key(Tag::Name) {
-        return Err(error::Error::JSONSchema);
-      }
-      let name = match TestNIC::jsonString(map.get(Tag::Name).unwrap()) {
+      // Make fqn for huge page
+      let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::HugePage, parentName) {
         Ok(val) => val,
-          Err(err) => { return Err(err); }
+        Err(err) => { return Err(err); }
       };
 
-      // Create hugePage
-      let fqn = format!("{}.{}", parentName, name);
-      log::debug!(target: "json", "verifying '{}'", fqn);
-      let hp = match self.createHugePage(fqn.as_str()) {
-        Some(val) => val,
-          None => {
-            log::error!(target: "json", "hugePage '{}' duplicated", fqn);
-            return Err(error::Error::DupReference);
-          }
-      };
+      log::debug!(target: "json", "verifying  '{}' '{}'", Tag::HugePage, fqn);
+
+      // Create huge page object
+      debug_assert!(self.nameMap.contains_key(fqn.as_str()));
+      debug_assert!(!self.hugePageMap.contains_key(fqn.as_str()));
+      let mut hp = self.hugePageMap.entry(fqn.clone()).or_insert(common::HugePage::new());
 
       // Find all other key-value pairs
+      let map: &HashMap<_, _> = item.get().unwrap();
       for (key, value) in map {
         match key.as_str() {
           Tag::Name => {}
-          Tag::HugePageCount => {
-            match TestNIC::jsonInteger(value) {
-              Ok(val) => { hp.pageCount = val as u32; }
-              Err(err) => {
-                log::error!(target: "json", "hugePage '{}.{}' invalid: {:?}", fqn, key, err);
-                return Err(err);
-              }
-            }
+          Tag::PageCount => {
+            match TestNIC::jsonInteger(value, &mut hp.pageCount, &fqn, Tag::HugePage, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
           }
-          Tag::SizeKB => {
-            match TestNIC::jsonInteger(value) {
-              Ok(val) => { hp.pageSizeKB = val as u32; }
-              Err(err) => {
-                log::error!(target: "json", "hugePage '{}.{}' invalid: {:?}", fqn, key, err);
-                return Err(err);
-              }
-            }
+          Tag::PageSizeKB => {
+            match TestNIC::jsonInteger(value, &mut hp.pageSizeKB, &fqn, Tag::HugePage, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
           }
           Tag::ByteAlignment => {
-            match TestNIC::jsonInteger(value) {
-              Ok(val) => { hp.byteAlignment = val as u32; }
-              Err(err) => {
-                log::error!(target: "json", "hugePage '{}.{}' invalid: {:?}", fqn, key, err);
-                return Err(err);
-              }
-            }
+            match TestNIC::jsonInteger(value, &mut hp.byteAlignment, &fqn, Tag::HugePage, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
           }
           other => {
-            log::error!(target: "json", "hugePage '{}.{}' unknown", fqn, key);
+            log::error!(target: "json", "'{}' object '{}.{}' unknown", Tag::HugePage, fqn, key);
             return Err(error::Error::JSONSchema);
           }
         }
@@ -491,7 +473,7 @@ impl TestNIC {
       match hp.verify() {
         Ok(()) => {}
         Err(err) => {
-          log::error!(target: "json", "hugePage '{}' invalid contents: {:?}", fqn, err);
+          log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::HugePage, fqn, err);
           return Err(err);
         }
       };
@@ -500,9 +482,10 @@ impl TestNIC {
     return Ok(());
   }
 
-  fn parseHeapAllocator(&mut self, parentName: &str, array: &JsonValue) -> Result<(), error::Error> {
+  fn parseHeapAllocator(&mut self, parentName: &String, array: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an array
     if !array.is_array() {
+      log::error!(target: "json", "'{}' object '{}' not an array", Tag::HeapAllocator, parentName);
       return Err(error::Error::JSONSchema);
     }
 
@@ -510,56 +493,42 @@ impl TestNIC {
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
       if !item.is_object() {
+        log::error!(target: "json", "'{}' object '{}' not an array of objects", Tag::HeapAllocator, parentName);
         return Err(error::Error::JSONSchema);
       }
 
-      // Access inner hashmap
-      let map: &HashMap<_, _> = item.get().unwrap();
-
-      // Find the huge page name
-      if !map.contains_key(Tag::Name) {
-        return Err(error::Error::JSONSchema);
-      }
-      let name = match TestNIC::jsonString(map.get(Tag::Name).unwrap()) {
+      // Make fqn for child allocator
+      let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::HeapAllocator, parentName) {
         Ok(val) => val,
-          Err(err) => { return Err(err); }
+        Err(err) => { return Err(err); }
       };
 
-      // Create heapAllocator
-      let fqn = format!("{}.{}", parentName, name);
-      log::debug!(target: "json", "verifying '{}'", fqn);
-      let hp = match self.createHeapAllocator(fqn.as_str()) {
-        Some(val) => val,
-          None => {
-            log::error!(target: "json", "heapAllocator '{}' duplicated", fqn);
-            return Err(error::Error::DupReference);
-          }
-      };
+      log::debug!(target: "json", "verifying  '{}' '{}'", Tag::HeapAllocator, fqn);
+
+      // Create child allocator object
+      debug_assert!(self.nameMap.contains_key(fqn.as_str()));
+      debug_assert!(!self.heapAllocMap.contains_key(fqn.as_str()));
+      let mut hp = self.heapAllocMap.entry(fqn.clone()).or_insert(common::HeapAllocator::new());
 
       // Find all other key-value pairs
+      let map: &HashMap<_, _> = item.get().unwrap();
       for (key, value) in map {
         match key.as_str() {
           Tag::Name => {}
           Tag::SizeKB => {
-            match TestNIC::jsonInteger(value) {
-              Ok(val) => { hp.sizeKB = val as u32; }
-              Err(err) => {
-                log::error!(target: "json", "heapAllocator '{}.{}' invalid: {:?}", fqn, key, err);
-                return Err(err);
-              }
-            }
+            match TestNIC::jsonInteger(value, &mut hp.sizeKB, &fqn, Tag::HeapAllocator, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
           }
           Tag::ByteAlignment => {
-            match TestNIC::jsonInteger(value) {
-              Ok(val) => { hp.byteAlignment = val as u32; }
-              Err(err) => {
-                log::error!(target: "json", "heapAllocator '{}.{}' invalid: {:?}", fqn, key, err);
-                return Err(err);
-              }
-            }
+            match TestNIC::jsonInteger(value, &mut hp.byteAlignment, &fqn, Tag::HeapAllocator, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
           }
           other => {
-            log::error!(target: "json", "heapAllocator '{}.{}' unknown", fqn, key);
+            log::error!(target: "json", "'{}' object '{}.{}' unknown", Tag::HeapAllocator, fqn, key);
             return Err(error::Error::JSONSchema);
           }
         }
@@ -569,7 +538,7 @@ impl TestNIC {
       match hp.verify() {
         Ok(()) => {}
         Err(err) => {
-          log::error!(target: "json", "heapAllocator '{}' invalid contents: {:?}", fqn, err);
+          log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::HeapAllocator, fqn, err);
           return Err(err);
         }
       };
@@ -578,9 +547,10 @@ impl TestNIC {
     return Ok(());
   }
 
-  fn parseChildAllocator(&mut self, parentName: &str, array: &JsonValue) -> Result<(), error::Error> {
+  fn parseChildAllocator(&mut self, parentName: &String, array: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an array
     if !array.is_array() {
+      log::error!(target: "json", "'{}' object '{}' not an array", Tag::ChildAllocator, parentName);
       return Err(error::Error::JSONSchema);
     }
 
@@ -588,65 +558,48 @@ impl TestNIC {
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
       if !item.is_object() {
+        log::error!(target: "json", "'{}' object '{}' not an array of objects", Tag::ChildAllocator, parentName);
         return Err(error::Error::JSONSchema);
       }
 
-      // Access inner hashmap
-      let map: &HashMap<_, _> = item.get().unwrap();
-
-      // Find the huge page name
-      if !map.contains_key(Tag::Name) {
-        return Err(error::Error::JSONSchema);
-      }
-      let name = match TestNIC::jsonString(map.get(Tag::Name).unwrap()) {
+      // Make fqn for child allocator
+      let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::ChildAllocator, parentName) {
         Ok(val) => val,
-          Err(err) => { return Err(err); }
+        Err(err) => { return Err(err); }
       };
 
-      // Create childAllocator
-      let fqn = format!("{}.{}", parentName, name);
-      log::debug!(target: "json", "verifying '{}'", fqn);
-      let hp = match self.createChildAllocator(fqn.as_str()) {
-        Some(val) => val,
-          None => {
-            log::error!(target: "json", "childAllocator '{}' duplicated", fqn);
-            return Err(error::Error::DupReference);
-          }
-      };
+      log::debug!(target: "json", "verifying  '{}' '{}'", Tag::ChildAllocator, fqn);
+
+      // Create child allocator object
+      debug_assert!(self.nameMap.contains_key(fqn.as_str()));
+      debug_assert!(!self.childAllocMap.contains_key(fqn.as_str()));
+      let mut hp = self.childAllocMap.entry(fqn.clone()).or_insert(common::ChildAllocator::new());
 
       // Find all other key-value pairs
+      let map: &HashMap<_, _> = item.get().unwrap();
       for (key, value) in map {
         match key.as_str() {
           Tag::Name => {}
           Tag::ParentName => {
-            match TestNIC::jsonString(value) {
-              Ok(val) => { hp.parentName = val; }
-              Err(err) => {
-                log::error!(target: "json", "childAllocator '{}.{}' invalid: {:?}", fqn, key, err);
-                return Err(err);
-              }
-            }
+            match TestNIC::jsonString(value, &mut hp.parentName, &fqn, Tag::ChildAllocator, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
           }
           Tag::SizeKB => {
-            match TestNIC::jsonInteger(value) {
-              Ok(val) => { hp.sizeKB = val as u32; }
-              Err(err) => {
-                log::error!(target: "json", "childAllocator '{}.{}' invalid: {:?}", fqn, key, err);
-                return Err(err);
-              }
-            }
+            match TestNIC::jsonInteger(value, &mut hp.sizeKB, &fqn, Tag::ChildAllocator, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
           }
           Tag::ByteAlignment => {
-            match TestNIC::jsonInteger(value) {
-              Ok(val) => { hp.byteAlignment = val as u32; }
-              Err(err) => {
-                log::error!(target: "json", "childAllocator '{}.{}' invalid: {:?}", fqn, key, err);
-                return Err(err);
-              }
-            }
+            match TestNIC::jsonInteger(value, &mut hp.byteAlignment, &fqn, Tag::ChildAllocator, key) {
+              Ok(val) => {}
+              Err(err) => { return Err(err); }
+            };
           }
           other => {
-            log::error!(target: "json", "childAllocator '{}.{}' unknown", fqn, key);
+            log::error!(target: "json", "'{}' object '{}.{}' unknown", Tag::ChildAllocator, fqn, key);
             return Err(error::Error::JSONSchema);
           }
         }
@@ -656,7 +609,7 @@ impl TestNIC {
       match hp.verify() {
         Ok(()) => {}
         Err(err) => {
-          log::error!(target: "json", "childAllocator '{}' invalid contents: {:?}", fqn, err);
+          log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::ChildAllocator, fqn, err);
           return Err(err);
         }
       };
@@ -665,138 +618,94 @@ impl TestNIC {
     return Ok(());
   }
 
-  fn parseSRPT(&mut self, parentName: &str, obj: &JsonValue) -> Result<(), error::Error> {
+  fn parseSRPT(&mut self, parentName: &String, obj: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an object
     if !obj.is_object() {
+      log::error!(target: "json", "'{}' object '{}' not an object", Tag::SRPT, parentName);
       return Err(error::Error::JSONSchema);
     }
 
-    // Access inner hashmap
-    let map: &HashMap<_, _> = obj.get().unwrap();
-
-    // Find the SRPT name
-    if !map.contains_key(Tag::Name) {
-      return Err(error::Error::JSONSchema);
-    }
-    let name = match TestNIC::jsonString(map.get(Tag::Name).unwrap()) {
+    // Make fqn for SRPT
+    let fqn = match TestNIC::findAndAddName(obj, &mut self.nameMap, Tag::SRPT, parentName) {
       Ok(val) => val,
-        Err(err) => { return Err(err); }
+      Err(err) => { return Err(err); }
     };
+
+    log::debug!(target: "json", "verifying  '{}' '{}'", Tag::SRPT, fqn);
 
     // Create SRPT
-    let fqn = format!("{}.{}", parentName, name);
-    log::debug!(target: "json", "verifying '{}'", fqn);
-    let hp = match self.createSRPT(fqn.as_str()) {
-      Some(val) => val,
-        None => {
-          log::error!(target: "json", "SRPT '{}' duplicated", fqn);
-          return Err(error::Error::DupReference);
-        }
-    };
+    debug_assert!(self.nameMap.contains_key(fqn.as_str()));
+    debug_assert!(!self.srptMap.contains_key(fqn.as_str()));
+    let mut hp = self.srptMap.entry(fqn.clone()).or_insert(common::SRPT::new());
 
-    // Find all other key-value pairs
+    // Process required SRPT fields
+    let map: &HashMap<_, _> = obj.get().unwrap();
     for (key, value) in map {
       match key.as_str() {
         Tag::Name => {}
         Tag::Capacity => {
-          match TestNIC::jsonInteger(value) {
-            Ok(val) => { hp.capacity = val as u32; }
-            Err(err) => {
-              log::error!(target: "json", "SRPT '{}.{}' invalid: {:?}", fqn, key, err);
-              return Err(err);
-            }
-          }
+          match TestNIC::jsonInteger(value, &mut hp.capacity, &fqn, Tag::SRPT, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
         }
         Tag::OverCommitmentCount => {
-          match TestNIC::jsonInteger(value) {
-            Ok(val) => { hp.overCommitmentCount = val as u32; }
-            Err(err) => {
-              log::error!(target: "json", "SRPT '{}.{}' invalid: {:?}", fqn, key, err);
-              return Err(err);
-            }
-          }
+          match TestNIC::jsonInteger(value, &mut hp.overCommitmentCount, &fqn, Tag::SRPT, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
         }
         Tag::ResponseRingCount => {
-          match TestNIC::jsonInteger(value) {
-            Ok(val) => { hp.responseRingCount = val as u32; }
-            Err(err) => {
-              log::error!(target: "json", "SRPT '{}.{}' invalid: {:?}", fqn, key, err);
-              return Err(err);
-            }
-          }
+          match TestNIC::jsonInteger(value, &mut hp.responseRingCount, &fqn, Tag::SRPT, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
         }
         Tag::RequestRingCount => {
-          match TestNIC::jsonInteger(value) {
-            Ok(val) => { hp.requestRingCount = val as u32; }
-            Err(err) => {
-              log::error!(target: "json", "SRPT '{}.{}' invalid: {:?}", fqn, key, err);
-              return Err(err);
-            }
-          }
+          match TestNIC::jsonInteger(value, &mut hp.requestRingCount, &fqn, Tag::SRPT, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
         }
-        Tag::CpuHwCore => {
-          match TestNIC::jsonInteger(value) {
-            Ok(val) => { hp.cpuHwCore = val as u32; }
-            Err(err) => {
-              log::error!(target: "json", "SRPT '{}.{}' invalid: {:?}", fqn, key, err);
-              return Err(err);
-            }
-          }
+        Tag::Cpu => {
+          match TestNIC::jsonInteger(value, &mut hp.cpu, &fqn, Tag::SRPT, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
         }
         Tag::AllocatorName => {
-          match TestNIC::jsonString(value) {
-            Ok(val) => { hp.allocatorName = val; }
-            Err(err) => {
-              log::error!(target: "json", "SRPT '{}.{}' invalid: {:?}", fqn, key, err);
-              return Err(err);
-            }
-          }
+          match TestNIC::jsonString(value, &mut hp.allocatorName, &fqn, Tag::SRPT, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
         }
         Tag::UnscheduledPriority => {
-          if value.is_array() {
-            let ary: &Vec<_> = value.get().unwrap();
-            match TestNIC::jsonArray(ary, &mut hp.unscheduledPriority, &fqn, Tag::SRPT, key) {
-              Ok(val) => {}
-              Err(err) => {
-                log::error!(target: "json", "'{}.{}.{}' invalid: {:?}", fqn, Tag::SRPT, key, err);
-                return Err(err);
-              }
-            };
-          } else {
-            log::error!(target: "json", "'{}.{}.{}' not an array", fqn, Tag::SRPT, key);
-            return Err(error::Error::JSONSchema);
-          }
+          match TestNIC::jsonArray(value, &mut hp.unscheduledPriority, &fqn, Tag::SRPT, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
         }
         Tag::ScheduledPriority => {
-          if value.is_array() {
-            let ary: &Vec<_> = value.get().unwrap();
-            match TestNIC::jsonArray(ary, &mut hp.scheduledPriority, &fqn, Tag::SRPT, key) {
-              Ok(val) => {}
-              Err(err) => {
-                log::error!(target: "json", "'{}.{}.{}' invalid: {:?}", fqn, Tag::SRPT, key, err);
-                return Err(err);
-              }
-            };
-          } else {
-            log::error!(target: "json", "'{}.{}.{}' not an array", fqn, Tag::SRPT, key);
-            return Err(error::Error::JSONSchema);
-          }
+          match TestNIC::jsonArray(value, &mut hp.scheduledPriority, &fqn, Tag::SRPT, key) {
+            Ok(val) => {}
+            Err(err) => { return Err(err); }
+          };
         }
         other => {
-          log::error!(target: "json", "'{}.{}.{}' unknown field", fqn, Tag::SRPT, key);
+          log::error!(target: "json", "'{}' object '{}.{}' unexpected", Tag::SRPT, fqn, key);
           return Err(error::Error::JSONSchema);
         }
       }
-
-      // Verify contents
-      match hp.verify() {
-        Ok(()) => {}
-        Err(err) => {
-          log::error!(target: "json", "SRPT '{}' invalid contents: {:?}", fqn, err);
-          return Err(err);
-        }
-      };
     }
+
+    // Verify contents
+    match hp.verify() {
+      Ok(()) => {}
+      Err(err) => {
+        log::error!(target: "json", "'{}' object '{}' invalid contents: {:?}", Tag::SRPT, fqn, err);
+        return Err(err);
+      }
+    };
 
     return Ok(());
   }
@@ -817,7 +726,7 @@ impl TestNIC {
 
     // Parse HugePageAllocator(s)
     if map.contains_key(Tag::HugePage) {
-      let result = match self.parseHugePage(fqn.as_str(), &item[Tag::HugePage]) {
+      let result = match self.parseHugePage(&fqn, &item[Tag::HugePage]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -825,7 +734,7 @@ impl TestNIC {
 
     // Parse HeapAllocators
     if map.contains_key(Tag::HeapAllocator) {
-      let result = match self.parseHeapAllocator(fqn.as_str(), &item[Tag::HeapAllocator]) {
+      let result = match self.parseHeapAllocator(&fqn, &item[Tag::HeapAllocator]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -833,7 +742,7 @@ impl TestNIC {
 
     // Parse ChildAllocators
     if map.contains_key(Tag::ChildAllocator) {
-      let result = match self.parseChildAllocator(fqn.as_str(), &item[Tag::ChildAllocator]) {
+      let result = match self.parseChildAllocator(&fqn, &item[Tag::ChildAllocator]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -841,7 +750,7 @@ impl TestNIC {
 
     // Parse SRPT
     if map.contains_key(Tag::SRPT) {
-      let result = match self.parseSRPT(fqn.as_str(), &item[Tag::SRPT]) {
+      let result = match self.parseSRPT(&fqn, &item[Tag::SRPT]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -855,24 +764,28 @@ impl Verify for TestNIC {
   fn verify(&mut self, obj: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an object
     if !obj.is_object() {
+      log::error!(target: "json", "malformed JSON");
       return Err(error::Error::JSONSchema);
     }
 
     // Make sure 'TransportSet' exists
     let map: &HashMap<_, _> = obj.get().unwrap();
     if !map.contains_key(Tag::TransportSet) {
+      log::error!(target: "json", "missing '{}' object", Tag::TransportSet);
       return Err(error::Error::JSONSchema);
     }
 
     // Make sure TransportSet is an array
     let transportSet = &obj[Tag::TransportSet];
     if !transportSet.is_array() {
+      log::error!(target: "json", "'{}' object not an array", Tag::TransportSet);
       return Err(error::Error::JSONSchema);
     }
 
     // Make sure array has 1+ elements
     let ary: &Vec<_> = transportSet.get().unwrap();
     if ary.len()==0 {
+      log::error!(target: "json", "'{}' object empty array", Tag::TransportSet);
       return Err(error::Error::JSONSchema);
     }
 
@@ -885,7 +798,7 @@ impl Verify for TestNIC {
       // Parse one transportSet item
       match self.parseTransportSet(item) {
         Ok(_) => {},
-          Err(err) => { return Err(err); }
+        Err(err) => { return Err(err); }
       }
     };
 

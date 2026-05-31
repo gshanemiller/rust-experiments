@@ -115,7 +115,7 @@ pub struct SRPT {
   pub unscheduledPriority: [u32; 6],
   pub scheduledPriority: [u32; 2],
   pub allocatorName: String,
-  pub cpuHwCore: u32,
+  pub cpu: u32,
 }
 
 impl SRPT {
@@ -128,7 +128,7 @@ impl SRPT {
       unscheduledPriority: [0,0,0,0,0,0],
       scheduledPriority: [0,0],
       allocatorName: String::new(),
-      cpuHwCore: 0,
+      cpu: 0,
     }
   }
 
@@ -144,8 +144,8 @@ impl SRPT {
     ret = ret && self.responseRingCount>=limit::Constant::SRPTRingCountMin;
     ret = ret && self.responseRingCount<=limit::Constant::SRPTRingCountMax;
     ret = ret && self.allocatorName.len()>0;
-    ret = ret && self.cpuHwCore>=limit::Constant::CPUCoreMin;
-    ret = ret && self.cpuHwCore<=limit::Constant::CPUCoreMax;
+    ret = ret && self.cpu>=limit::Constant::CPUCoreMin;
+    ret = ret && self.cpu<=limit::Constant::CPUCoreMax;
 
     // Make sure non-zero increasing only
     for (i, val) in self.unscheduledPriority.iter().enumerate() {

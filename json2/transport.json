@@ -6,8 +6,8 @@
       "HugePage": [
         {
           "Name": "Allocator1",
-          "HugePageCount": 20,
-          "SizeKB": 2048,
+          "PageCount": 20,
+          "PageSizeKB": 2048,
           "ByteAlignment": 8
         }
       ],
@@ -44,8 +44,8 @@
         "Name": "SRPTSchedule",
         "Capacity": 64,
         "OverCommitmentCount": 3,
-        "ResponseRingCount": 1024,
-        "RequestRingCount": 1024,
+        "ResponseRingCount": 8,
+        "RequestRingCount": 8,
         "UnscheduledPriority": [
           346,
           1106,
@@ -58,8 +58,8 @@
           20333,
           4294967295
         ],
-        "Allocator": "Allocator3",
-        "CPUHWcore": 3
+        "AllocatorName": "Allocator3",
+        "CPU": 3
       },
 
       "NIC": {
@@ -76,7 +76,7 @@
         {
           "Name": "RXQ1",
           "RingSize": 1024,
-          "Allocator": "Allocator4"
+          "AllocatorName": "Allocator4"
         }
       ],
 
@@ -84,14 +84,14 @@
         {
           "Name": "TXQ1",
           "RingSize": 1024,
-          "Allocator": "Allocator5"
+          "AllocatorName": "Allocator5"
         }
       ],
 
       "Transport": [
         {
           "Name": "Transport1",
-          "CPUHWcore": 3,
+          "CPU": 3,
           "QueuePair": {
             "RXQName": "RXQ1",
             "TXQName": "TXQ1",
@@ -108,7 +108,7 @@
           "CallbackCapacity": 8,
           "ReadyCapacity": 16,
           "ReserveCapacity": 16,
-          "Allocator": "Allocator2"
+          "AllocatorName": "Allocator2"
         }
       ]
     }
