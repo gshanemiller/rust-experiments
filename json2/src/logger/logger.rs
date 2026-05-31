@@ -1,4 +1,4 @@
-use log::{LevelFilter, SetLoggerError, Record, Level, Metadata};
+use log::{LevelFilter, Record, Level, Metadata};
 
 pub struct Logger;
 

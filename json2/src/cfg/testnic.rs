@@ -235,25 +235,36 @@ struct Tag;
 
 impl Tag {
   pub const Name: &str = "Name";
-  pub const SizeKB : &str = "SizeKB";
   pub const ParentName: &str = "ParentName";
-  pub const TransportSet: &str = "TransportSet";
+  pub const AllocatorName: &str = "AllocatorName";
+
+  pub const SizeKB : &str = "SizeKB";
   pub const ByteAlignment: &str = "ByteAlignment";
   pub const HugePageCount: &str = "HugePageCount";
 
-  pub const HugePage: &str = "HugePage";
-  pub const HeapAllocator: &str = "HeapAllocator";
-  pub const ChildAllocator: &str = "ChildAllocator";
   pub const NIC: &str = "NIC";
   pub const RXQ: &str = "RXQ";
   pub const TXQ: &str = "TXQ";
   pub const SRPT: &str = "SRPT";
+  pub const HugePage: &str = "HugePage";
   pub const Transport: &str = "Transport";
+  pub const TransportSet: &str = "TransportSet";
+  pub const HeapAllocator: &str = "HeapAllocator";
+  pub const ChildAllocator: &str = "ChildAllocator";
+
+  pub const Capacity: &str = "Capacity";
+  pub const CpuHwCore: &str = "CpuHwCore";
+  pub const RequestRingCount: &str = "RequestRingCount";
+  pub const ResponseRingCount: &str = "ResponseRingCount";
+  pub const ScheduledPriority: &str = "ScheduledPriority";
+  pub const UnscheduledPriority: &str = "UnscheduledPriority";
+  pub const OverCommitmentCount: &str = "OverCommitmentCount";
 }
 
 pub struct TestNIC {
   nicMap: HashMap<String, NIC>,
   nameMap: HashMap<String, bool>,
+  srptMap: HashMap<String, common::SRPT>,
   hugePageMap: HashMap<String, common::HugePage>,
   heapAllocMap: HashMap<String, common::HeapAllocator>,
   childAllocMap: HashMap<String, common::ChildAllocator>,
@@ -265,6 +276,7 @@ impl TestNIC {
     Self {
       nicMap: HashMap::new(),
       nameMap: HashMap::new(),
+      srptMap: HashMap::new(),
       hugePageMap: HashMap::new(),
       heapAllocMap: HashMap::new(),
       childAllocMap: HashMap::new(),
@@ -272,24 +284,35 @@ impl TestNIC {
     }
   }
 
-  fn createHugePage(&mut self, key: &str) -> Option<&mut common::HugePage> {                                                 
+  fn createSRPT(&mut self, key: &str) -> Option<&mut common::SRPT> {
+    if !self.nameMap.contains_key(key) && !self.srptMap.contains_key(key) {
+      self.nameMap.insert(key.to_string(), true);
+      return Some(self.srptMap.entry(key.to_string()).or_insert(common::SRPT::new()));
+    }
+    return None;
+  }
+
+  fn createHugePage(&mut self, key: &str) -> Option<&mut common::HugePage> {
     if !self.nameMap.contains_key(key) && !self.hugePageMap.contains_key(key) {
+      self.nameMap.insert(key.to_string(), true);
       return Some(self.hugePageMap.entry(key.to_string()).or_insert(common::HugePage::new()));
-    }                                                                                                                   
+    }
     return None;
   }
 
   fn createHeapAllocator(&mut self, key: &str) -> Option<&mut common::HeapAllocator> {
-    if !self.heapAllocMap.contains_key(key) {                                                                                   
+    if !self.nameMap.contains_key(key) && !self.heapAllocMap.contains_key(key) {
+      self.nameMap.insert(key.to_string(), true);
       return Some(self.heapAllocMap.entry(key.to_string()).or_insert(common::HeapAllocator::new()));
-    }                                                                                                                   
+    }
     return None;
   }
 
   fn createChildAllocator(&mut self, key: &str) -> Option<&mut common::ChildAllocator> {
-    if !self.childAllocMap.contains_key(key) {                                                                                   
+    if !self.nameMap.contains_key(key) && !self.childAllocMap.contains_key(key) {
+      self.nameMap.insert(key.to_string(), true);
       return Some(self.childAllocMap.entry(key.to_string()).or_insert(common::ChildAllocator::new()));
-    }                                                                                                                   
+    }
     return None;
   }
 
@@ -325,6 +348,32 @@ impl TestNIC {
       };
     }
     return Err(error::Error::JSONSchema);
+  }
+
+  fn jsonArray(ary: &Vec<JsonValue>, data: &mut [u32], fqn: &String, objKind: &str, key: &str) -> Result<(), error::Error> {
+    let mut idx: usize = 0;
+    let mut ret = ary.len()==data.len();
+    if ret {
+      for obj in ary {
+        if !obj.is_number() {
+          ret = false;
+          break;
+        }
+        // API forces f64, so cast
+        let result: Option<&f64> = obj.get();
+        match result {
+          Some(val) => { if *val>=0.0 && val.fract()==0.0 { data[idx] = *val as u32; idx += 1; } }
+          None => { ret = false; }
+        };
+      }
+    }
+    if !ret {
+      log::error!(target: "json", "'{}' object '{}.{}' is not an valid array of u32 length {}",
+        objKind, fqn, key, data.len());
+      return Err(error::Error::JSONSchema);
+    } else {
+      return Ok(());
+    }
   }
 
   fn parseHugePage(&mut self, parentName: &str, array: &JsonValue) -> Result<(), error::Error> {
@@ -579,6 +628,142 @@ impl TestNIC {
     return Ok(());
   }
 
+  fn parseSRPT(&mut self, parentName: &str, obj: &JsonValue) -> Result<(), error::Error> {
+    // Make sure it's an object
+    if !obj.is_object() {
+      return Err(error::Error::JSONSchema);
+    }
+
+    // Access inner hashmap
+    let map: &HashMap<_, _> = obj.get().unwrap();
+
+    // Find the SRPT name
+    if !map.contains_key(Tag::Name) {
+      return Err(error::Error::JSONSchema);
+    }
+    let name = match TestNIC::jsonString(map.get(Tag::Name).unwrap()) {
+       Ok(val) => val,
+       Err(err) => { return Err(err); }
+    };
+
+    // Create SRPT
+    let fqn = format!("{}.{}", parentName, name);
+    log::debug!(target: "json", "verifying '{}'", fqn);
+    let hp = match self.createSRPT(fqn.as_str()) {
+      Some(val) => val,
+      None => {
+        log::error!(target: "json", "SRPT '{}' duplicated", fqn);
+        return Err(error::Error::DupReference);
+      }
+    };
+
+    // Find all other key-value pairs
+    for (key, value) in map {
+      match key.as_str() {
+        Tag::Name => {}
+        Tag::Capacity => {
+          match TestNIC::jsonInteger(value) {
+            Ok(val) => { hp.capacity = val as u32; }
+            Err(err) => {
+              log::error!(target: "json", "SRPT '{}.{}' invalid: {:?}", fqn, key, err);
+              return Err(err);
+            }
+          }
+        }
+        Tag::OverCommitmentCount => {
+          match TestNIC::jsonInteger(value) {
+            Ok(val) => { hp.overCommitmentCount = val as u32; }
+            Err(err) => {
+              log::error!(target: "json", "SRPT '{}.{}' invalid: {:?}", fqn, key, err);
+              return Err(err);
+            }
+          }
+        }
+        Tag::ResponseRingCount => {
+          match TestNIC::jsonInteger(value) {
+            Ok(val) => { hp.responseRingCount = val as u32; }
+            Err(err) => {
+              log::error!(target: "json", "SRPT '{}.{}' invalid: {:?}", fqn, key, err);
+              return Err(err);
+            }
+          }
+        }
+        Tag::RequestRingCount => {
+          match TestNIC::jsonInteger(value) {
+            Ok(val) => { hp.requestRingCount = val as u32; }
+            Err(err) => {
+              log::error!(target: "json", "SRPT '{}.{}' invalid: {:?}", fqn, key, err);
+              return Err(err);
+            }
+          }
+        }
+        Tag::CpuHwCore => {
+          match TestNIC::jsonInteger(value) {
+            Ok(val) => { hp.cpuHwCore = val as u32; }
+            Err(err) => {
+              log::error!(target: "json", "SRPT '{}.{}' invalid: {:?}", fqn, key, err);
+              return Err(err);
+            }
+          }
+        }
+        Tag::AllocatorName => {
+          match TestNIC::jsonString(value) {
+            Ok(val) => { hp.allocatorName = val; }
+            Err(err) => {
+              log::error!(target: "json", "SRPT '{}.{}' invalid: {:?}", fqn, key, err);
+              return Err(err);
+            }
+          }
+        }
+        Tag::UnscheduledPriority => {
+          if value.is_array() {
+            let ary: &Vec<_> = value.get().unwrap();
+            match TestNIC::jsonArray(ary, &mut hp.unscheduledPriority, &fqn, Tag::SRPT, key) {
+              Ok(val) => {}
+              Err(err) => {
+                log::error!(target: "json", "'{}.{}.{}' invalid: {:?}", fqn, Tag::SRPT, key, err);
+                return Err(err);
+              }
+            };
+          } else {
+            log::error!(target: "json", "'{}.{}.{}' not an array", fqn, Tag::SRPT, key);
+            return Err(error::Error::JSONSchema);
+          }
+        }
+        Tag::ScheduledPriority => {
+          if value.is_array() {
+            let ary: &Vec<_> = value.get().unwrap();
+            match TestNIC::jsonArray(ary, &mut hp.scheduledPriority, &fqn, Tag::SRPT, key) {
+              Ok(val) => {}
+              Err(err) => {
+                log::error!(target: "json", "'{}.{}.{}' invalid: {:?}", fqn, Tag::SRPT, key, err);
+                return Err(err);
+              }
+            };
+          } else {
+            log::error!(target: "json", "'{}.{}.{}' not an array", fqn, Tag::SRPT, key);
+            return Err(error::Error::JSONSchema);
+          }
+        }
+        other => {
+          log::error!(target: "json", "'{}.{}.{}' unknown field", fqn, Tag::SRPT, key);
+          return Err(error::Error::JSONSchema);
+        }
+      }
+
+      // Verify contents
+      match hp.verify() {
+        Ok(()) => {}
+        Err(err) => {
+          log::error!(target: "json", "SRPT '{}' invalid contents: {:?}", fqn, err);
+          return Err(err);
+        }
+      };
+    }
+
+    return Ok(());
+  }
+
   fn parseTransportSet(&mut self, item: &JsonValue) -> Result<(), error::Error> {
     debug_assert!(item.is_object());
 
@@ -620,15 +805,23 @@ impl TestNIC {
       };
     }
 
+    // Parse SRPT
+    if map.contains_key(Tag::SRPT) {
+      let result = match self.parseSRPT(name.as_str(), &item[Tag::SRPT]) {
+        Ok(_) => {},
+        Err(err) => { return Err(err); }
+      };
+    }
+
     return Ok(());
   }
 }
 
 impl Verify for TestNIC {
   fn verify(&mut self, obj: &JsonValue) -> Result<(), error::Error> {
-    // Make sure it's an object                                                                                         
-    if !obj.is_object() {                                                                                        
-      return Err(error::Error::JSONSchema);                                                                             
+    // Make sure it's an object
+    if !obj.is_object() {
+      return Err(error::Error::JSONSchema);
     }
 
     // Make sure 'TransportSet' exists
