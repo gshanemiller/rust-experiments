@@ -318,7 +318,7 @@ impl TestNIC {
 
   fn jsonInteger(obj: &JsonValue) -> Result<u64, error::Error> {
     if obj.is_number() {
-      // API forces f64, so cast
+      // API forces f64, so make sure it's an integer
       let result: Option<&f64> = obj.get();
       match result {
         Some(val) => { if *val>=0.0 && val.fract()==0.0 { return Ok(*val as u64); } }
@@ -343,10 +343,47 @@ impl TestNIC {
     if obj.is_string() {
       let result: Option<&String> = obj.get();
       match result {
+        // Clone string so when JSON dropped, copy exists
         Some(val) => { if val.len()>0 { return Ok(val.clone()); } }
         None => {}
       };
     }
+    return Err(error::Error::JSONSchema);
+  }
+
+  fn findAndAddName(parentObj: &JsonValue, nameMap: &mut HashMap<String, bool>, kind: &str, parentName: &str)
+    -> Result<String, error::Error> {
+    debug_assert!(parentObj.is_object());
+
+    // Get map from parentObj, and find Name. The direct route
+    // parentObj[Tag::Name] risks panic if does not exist
+    let map: &HashMap<_, _> = parentObj.get().unwrap();
+    if !map.contains_key(Tag::Name) {
+      log::error!(target: "json", "'{}' object '{}' missing name", kind, parentName);
+      return Err(error::Error::JSONSchema);
+    }
+
+    // Make sure name is a non-empty, unique string
+    let jsonObj = &parentObj[Tag::Name];
+    if jsonObj.is_string() {
+      let strRef: Option<&String> = jsonObj.get();
+      match strRef {
+        Some(val) => {
+          if val.len()>0 {
+            let fqn = format!("{}.{}", parentName, val);
+            if nameMap.contains_key(&fqn) {
+              log::error!(target: "json", "'{}' object '{}' duplicate name", kind, fqn);
+              return Err(error::Error::JSONSchema);
+            }
+            nameMap.insert(fqn.clone(), true);
+            return Ok(fqn.clone());
+          }
+        }
+        None => {}
+      };
+    }
+
+    log::error!(target: "json", "'{}' object in '{}' field '{}' malformed string", kind, parentName, Tag::Name);
     return Err(error::Error::JSONSchema);
   }
 
@@ -369,7 +406,7 @@ impl TestNIC {
     }
     if !ret {
       log::error!(target: "json", "'{}' object '{}.{}' is not an valid array of u32 length {}",
-        objKind, fqn, key, data.len());
+          objKind, fqn, key, data.len());
       return Err(error::Error::JSONSchema);
     } else {
       return Ok(());
@@ -398,7 +435,7 @@ impl TestNIC {
       }
       let name = match TestNIC::jsonString(map.get(Tag::Name).unwrap()) {
         Ok(val) => val,
-        Err(err) => { return Err(err); }
+          Err(err) => { return Err(err); }
       };
 
       // Create hugePage
@@ -406,10 +443,10 @@ impl TestNIC {
       log::debug!(target: "json", "verifying '{}'", fqn);
       let hp = match self.createHugePage(fqn.as_str()) {
         Some(val) => val,
-        None => {
-          log::error!(target: "json", "hugePage '{}' duplicated", fqn);
-          return Err(error::Error::DupReference);
-        }
+          None => {
+            log::error!(target: "json", "hugePage '{}' duplicated", fqn);
+            return Err(error::Error::DupReference);
+          }
       };
 
       // Find all other key-value pairs
@@ -485,7 +522,7 @@ impl TestNIC {
       }
       let name = match TestNIC::jsonString(map.get(Tag::Name).unwrap()) {
         Ok(val) => val,
-        Err(err) => { return Err(err); }
+          Err(err) => { return Err(err); }
       };
 
       // Create heapAllocator
@@ -493,10 +530,10 @@ impl TestNIC {
       log::debug!(target: "json", "verifying '{}'", fqn);
       let hp = match self.createHeapAllocator(fqn.as_str()) {
         Some(val) => val,
-        None => {
-          log::error!(target: "json", "heapAllocator '{}' duplicated", fqn);
-          return Err(error::Error::DupReference);
-        }
+          None => {
+            log::error!(target: "json", "heapAllocator '{}' duplicated", fqn);
+            return Err(error::Error::DupReference);
+          }
       };
 
       // Find all other key-value pairs
@@ -563,7 +600,7 @@ impl TestNIC {
       }
       let name = match TestNIC::jsonString(map.get(Tag::Name).unwrap()) {
         Ok(val) => val,
-        Err(err) => { return Err(err); }
+          Err(err) => { return Err(err); }
       };
 
       // Create childAllocator
@@ -571,10 +608,10 @@ impl TestNIC {
       log::debug!(target: "json", "verifying '{}'", fqn);
       let hp = match self.createChildAllocator(fqn.as_str()) {
         Some(val) => val,
-        None => {
-          log::error!(target: "json", "childAllocator '{}' duplicated", fqn);
-          return Err(error::Error::DupReference);
-        }
+          None => {
+            log::error!(target: "json", "childAllocator '{}' duplicated", fqn);
+            return Err(error::Error::DupReference);
+          }
       };
 
       // Find all other key-value pairs
@@ -642,8 +679,8 @@ impl TestNIC {
       return Err(error::Error::JSONSchema);
     }
     let name = match TestNIC::jsonString(map.get(Tag::Name).unwrap()) {
-       Ok(val) => val,
-       Err(err) => { return Err(err); }
+      Ok(val) => val,
+        Err(err) => { return Err(err); }
     };
 
     // Create SRPT
@@ -651,10 +688,10 @@ impl TestNIC {
     log::debug!(target: "json", "verifying '{}'", fqn);
     let hp = match self.createSRPT(fqn.as_str()) {
       Some(val) => val,
-      None => {
-        log::error!(target: "json", "SRPT '{}' duplicated", fqn);
-        return Err(error::Error::DupReference);
-      }
+        None => {
+          log::error!(target: "json", "SRPT '{}' duplicated", fqn);
+          return Err(error::Error::DupReference);
+        }
     };
 
     // Find all other key-value pairs
@@ -767,23 +804,20 @@ impl TestNIC {
   fn parseTransportSet(&mut self, item: &JsonValue) -> Result<(), error::Error> {
     debug_assert!(item.is_object());
 
-    // Get map from item and first find Name
-    let map: &HashMap<_, _> = item.get().unwrap();
-    if !map.contains_key(Tag::Name) {
-      return Err(error::Error::JSONSchema);
-    }
-
-    // Make sure name is a string
-    let jsonRes = TestNIC::jsonString(&item[Tag::Name]);
-    let name = match jsonRes {
+    let parentName = "root";
+    let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::TransportSet, &parentName) {
       Ok(val) => val,
       Err(err) => { return Err(err); }
     };
-    log::debug!(target: "json", "verifying '{:?}'", name);
+
+    log::debug!(target: "json", "verifying '{}'", fqn);
+
+    // Get inner object then find, parse sub-objects 
+    let map: &HashMap<_, _> = item.get().unwrap();
 
     // Parse HugePageAllocator(s)
     if map.contains_key(Tag::HugePage) {
-      let result = match self.parseHugePage(name.as_str(), &item[Tag::HugePage]) {
+      let result = match self.parseHugePage(fqn.as_str(), &item[Tag::HugePage]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -791,7 +825,7 @@ impl TestNIC {
 
     // Parse HeapAllocators
     if map.contains_key(Tag::HeapAllocator) {
-      let result = match self.parseHeapAllocator(name.as_str(), &item[Tag::HeapAllocator]) {
+      let result = match self.parseHeapAllocator(fqn.as_str(), &item[Tag::HeapAllocator]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -799,7 +833,7 @@ impl TestNIC {
 
     // Parse ChildAllocators
     if map.contains_key(Tag::ChildAllocator) {
-      let result = match self.parseChildAllocator(name.as_str(), &item[Tag::ChildAllocator]) {
+      let result = match self.parseChildAllocator(fqn.as_str(), &item[Tag::ChildAllocator]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -807,7 +841,7 @@ impl TestNIC {
 
     // Parse SRPT
     if map.contains_key(Tag::SRPT) {
-      let result = match self.parseSRPT(name.as_str(), &item[Tag::SRPT]) {
+      let result = match self.parseSRPT(fqn.as_str(), &item[Tag::SRPT]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -836,9 +870,9 @@ impl Verify for TestNIC {
       return Err(error::Error::JSONSchema);
     }
 
-    // Make array has 1+ elements in it
+    // Make sure array has 1+ elements
     let ary: &Vec<_> = transportSet.get().unwrap();
-    if ary.len()<1 {
+    if ary.len()==0 {
       return Err(error::Error::JSONSchema);
     }
 
@@ -851,7 +885,7 @@ impl Verify for TestNIC {
       // Parse one transportSet item
       match self.parseTransportSet(item) {
         Ok(_) => {},
-        Err(err) => { return Err(err); }
+          Err(err) => { return Err(err); }
       }
     };
 
