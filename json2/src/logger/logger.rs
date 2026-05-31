@@ -3,8 +3,9 @@ use log::{LevelFilter, SetLoggerError, Record, Level, Metadata};
 pub struct Logger;
 
 impl Logger {
-  pub fn new() -> Result<(), SetLoggerError> {
-    return log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info));
+  pub fn new() {
+    log::set_logger(&LOGGER).unwrap();
+    log::set_max_level(LevelFilter::Trace);
   }
 }
 

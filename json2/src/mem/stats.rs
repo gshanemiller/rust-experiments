@@ -7,7 +7,6 @@ unsafe extern "C" {
 }
 
 
-#[allow(non_snake_case)]
 #[derive(Copy, Clone)]
 pub struct Stats {
   d_capacityBytes:        usize,
@@ -19,7 +18,6 @@ pub struct Stats {
   d_totalAllocatedBytes:  usize,
 }
 
-#[allow(non_snake_case)]
 impl Stats {
   pub const fn new(capacityBytes: usize) -> Self {
     debug_assert!(capacityBytes>0);

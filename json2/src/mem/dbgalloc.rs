@@ -19,7 +19,6 @@ unsafe extern "C" {
 }
 
 #[cfg(all(feature="customAllocators"))]
-#[allow(non_snake_case)]
 pub struct DefaultAllocator {
   delegate: System,
   #[cfg(all(feature="debugAllocatorStats"))]
@@ -27,7 +26,6 @@ pub struct DefaultAllocator {
 }
 
 #[cfg(all(feature="customAllocators"))]
-#[allow(non_snake_case)]
 impl DefaultAllocator {
   pub fn new(capacityBytes: usize) -> Self {
     debug_assert!(capacityBytes>0);
@@ -58,7 +56,6 @@ impl Drop for DefaultAllocator {
 }
 
 #[cfg(all(feature="customAllocators"))]
-#[allow(non_snake_case)]
 unsafe impl Allocator for DefaultAllocator {
   fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
     // Panic if insufficient memory if stats enabled

@@ -3,7 +3,7 @@
     {
       "Name": "PrimarySet",
 
-      "HugePageAllocator": [
+      "HugePage": [
         {
           "Name": "Allocator1",
           "HugePageCount": 20,

@@ -1,7 +1,6 @@
 use crate::cfg::limit;
 use crate::err::error;
 
-#[allow(non_snake_case)]
 pub struct HugePage {
   pub pageCount: u32,
   pub pageSizeKB: u32,
@@ -23,8 +22,7 @@ impl HugePage {
     let mut ret = true;
     let mut found = false;
 
-    ret = ret && self.pageCount>=limit::Constant::NUMANodeMin;
-    ret = ret && self.pageCount<=limit::Constant::NUMANodeMax;
+    ret = ret && self.pageCount>0;
     ret = ret && self.byteAlignment>=limit::Constant::ByteAlignmentMin;
     ret = ret && self.byteAlignment<=limit::Constant::ByteAlignmentMax;
     ret = ret && self.numaNode>=limit::Constant::NUMANodeMin;
@@ -46,7 +44,6 @@ impl HugePage {
   }
 }
 
-#[allow(non_snake_case)]
 pub struct HeapAllocator {
   pub sizeKB: u32,
   pub byteAlignment: u32,
@@ -75,7 +72,6 @@ impl HeapAllocator {
   }
 }
 
-#[allow(non_snake_case)]
 pub struct ChildAllocator {
   pub parentName: String,
   pub sizeKB: u32,
@@ -111,7 +107,6 @@ impl ChildAllocator {
   }
 }
 
-#[allow(non_snake_case)]
 pub struct SRPT {
   pub capacity: u32,
   pub overCommitmentCount: u32,
@@ -180,7 +175,6 @@ impl SRPT {
   }
 }
 
-#[allow(non_snake_case)]
 pub struct VLANPort {
   pub port: u32,
   pub vlan: u32,
