@@ -721,7 +721,7 @@ impl TestNIC {
 
     log::debug!(target: "json", "verifying '{}'", fqn);
 
-    // Get inner object then find, parse sub-objects 
+    // Get inner object then find, parse sub-objects
     let map: &HashMap<_, _> = item.get().unwrap();
 
     // Parse HugePageAllocator(s)
