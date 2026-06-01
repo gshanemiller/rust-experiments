@@ -136,9 +136,8 @@ pub trait Verify {
       Err(err) => { return Err(err); }
     };
 
-    println!("drop json");
+    // Don't need JSON anymore
     drop(jsonObject);
-    println!("drop done");
 
     // Verify
     log::info!("verifying json contents '{}'", fname);
