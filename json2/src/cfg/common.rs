@@ -111,10 +111,6 @@ impl ChildAllocator {
       return Err(error::Error::OutOfRange);
     }
   }
-
-  pub fn crossVerify(&self) -> Result<(), error::Error> {
-    return Ok(());
-  }
 }
 
 pub struct SRPT {
@@ -181,10 +177,6 @@ impl SRPT {
     } else {
       return Err(error::Error::OutOfRange);
     }
-  }
-
-  pub fn crossVerify(&self) -> Result<(), error::Error> {
-    return Ok(());
   }
 }
 

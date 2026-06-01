@@ -91,10 +91,6 @@ impl NIC {
       return Err(error::Error::OutOfRange);
     }
   }
-
-  pub fn crossVerify(&self, nic: &TestNIC) -> Result<(), error::Error> {
-    return Ok(());
-  }
 }
 
 struct NICQueue {
@@ -125,10 +121,6 @@ impl NICQueue {
     } else {
       return Err(error::Error::OutOfRange);
     }
-  }
-
-  pub fn crossVerify(&self, nic: &TestNIC) -> Result<(), error::Error> {
-    return Ok(());
   }
 }
 
@@ -232,10 +224,6 @@ impl Transport {
     } else {
       return Err(error::Error::OutOfRange);
     }
-  }
-
-  pub fn crossVerify(&self, nic: &TestNIC) -> Result<(), error::Error> {
-    return Ok(());
   }
 }
 
@@ -509,7 +497,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!("parsing  '{}' '{}'", Tag::HugePage, fqn);
+      log::debug!("parsing '{}' '{}'", Tag::HugePage, fqn);
 
       // Create huge page object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -585,7 +573,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!("parsing  '{}' '{}'", Tag::HeapAllocator, fqn);
+      log::debug!("parsing '{}' '{}'", Tag::HeapAllocator, fqn);
 
       // Create heap allocator object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -655,7 +643,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!("parsing  '{}' '{}'", Tag::ChildAllocator, fqn);
+      log::debug!("parsing '{}' '{}'", Tag::ChildAllocator, fqn);
 
       // Create child allocator object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -731,7 +719,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!("parsing  '{}' '{}'", Tag::SRPT, fqn);
+      log::debug!("parsing '{}' '{}'", Tag::SRPT, fqn);
 
       // Create SRPT object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -825,7 +813,7 @@ impl TestNIC {
       Err(err) => { return Err(err); }
     };
 
-    log::debug!("parsing  '{}' '{}'", Tag::NIC, fqn);
+    log::debug!("parsing '{}' '{}'", Tag::NIC, fqn);
 
     // Create NIC
     debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -919,7 +907,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!("parsing  '{}' '{}'", Tag::RXQ, fqn);
+      log::debug!("parsing '{}' '{}'", Tag::RXQ, fqn);
 
       // Create RXQ queue object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -985,7 +973,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!("parsing  '{}' '{}'", Tag::TXQ, fqn);
+      log::debug!("parsing '{}' '{}'", Tag::TXQ, fqn);
 
       // Create TXQ queue object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -1055,7 +1043,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!("parsing  '{}' '{}'", Tag::Transport, fqn);
+      log::debug!("parsing '{}' '{}'", Tag::Transport, fqn);
 
       // Create transport
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -1387,6 +1375,10 @@ impl TestNIC {
 
     return Ok(());
   }
+
+  fn crossVerify(&mut self) -> Result<(), error::Error> {
+    return Ok(());
+  }
 }
 
 impl Verify for TestNIC {
@@ -1433,6 +1425,12 @@ impl Verify for TestNIC {
 
     // Do NUMA lookups
     match self.numaLookups() {
+      Ok(_) => {},
+      Err(err) => { return Err(err); }
+    };
+
+    // Do cross verify
+    match self.crossVerify() {
       Ok(_) => {},
       Err(err) => { return Err(err); }
     };
