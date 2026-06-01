@@ -4,7 +4,8 @@ use crate::err::error;
 use tinyjson::{JsonParser, JsonValue};
 
 pub trait Verify {
-  fn verify(&mut self, obj: &JsonValue) -> Result<(), error::Error>;
+  fn verify(&mut self) -> Result<(), error::Error>;
+  fn parse(&mut self, obj: &JsonValue) -> Result<(), error::Error>;
 
   fn isPciAddress(&self, addr: &String) -> Result<(), error::Error> {
     let mut ret = true;
@@ -128,9 +129,20 @@ pub trait Verify {
       Err(_) => { return Err(error::Error::JSONError); }
     };
 
-    // Parse + verify
+    // Parse
     log::info!("parsing json contents '{}'", fname);
-    match self.verify(&jsonObject) {
+    match self.parse(&jsonObject) {
+      Ok(()) => {},
+      Err(err) => { return Err(err); }
+    };
+
+    println!("drop json");
+    drop(jsonObject);
+    println!("drop done");
+
+    // Verify
+    log::info!("verifying json contents '{}'", fname);
+    match self.verify() {
       Ok(()) => {},
       Err(err) => { return Err(err); }
     };

@@ -13,6 +13,3 @@ debugAllocatorTrace = []
 libc = "0.2.186"
 tinyjson = "2.5.1"
 log = {version="0.4.30", features = ["max_level_trace", "release_max_level_warn"]}
-
-[build]
-rustflags = ["-A", "non_snake_case"]

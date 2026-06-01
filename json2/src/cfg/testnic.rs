@@ -1382,7 +1382,7 @@ impl TestNIC {
 }
 
 impl Verify for TestNIC {
-  fn verify(&mut self, obj: &JsonValue) -> Result<(), error::Error> {
+  fn parse(&mut self, obj: &JsonValue) -> Result<(), error::Error> {
     // Make sure it's an object
     if !obj.is_object() {
       log::error!("malformed JSON");
@@ -1429,6 +1429,10 @@ impl Verify for TestNIC {
       Err(err) => { return Err(err); }
     };
 
+    return Ok(());
+  }
+
+  fn verify(&mut self) -> Result<(), error::Error> {
     // Do cross verify
     match self.crossVerify() {
       Ok(_) => {},
