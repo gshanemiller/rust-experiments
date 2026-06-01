@@ -286,7 +286,7 @@ impl Tag {
   pub const ScheduledPriority: &str = "ScheduledPriority";
   pub const UnscheduledPriority: &str = "UnscheduledPriority";
   pub const OverCommitmentCount: &str = "OverCommitmentCount";
-  
+
   pub const MACAddress: &str = "MACAddress";
   pub const IPV4Address: &str = "IPV4Address";
   pub const IPV6Address: &str = "IPV6Address";
@@ -1114,7 +1114,7 @@ impl TestNIC {
                 log::error!("'{}' object '{}.{}' not an array of objects", Tag::Transport, fqn, key);
                 return Err(error::Error::JSONSchema);
               }
-              let mut subHp = NICQueuePair::new(); 
+              let mut subHp = NICQueuePair::new();
               let subMap: &HashMap<_, _> = subItem.get().unwrap();
               for (subKey, subValue) in subMap {
                 match subKey.as_str() {
