@@ -1,6 +1,7 @@
 use log;
 mod err;
 mod cfg;
+mod numa;
 mod logger;
 
 use crate::cfg::interface::Verify;

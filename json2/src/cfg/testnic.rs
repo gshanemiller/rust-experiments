@@ -1,6 +1,7 @@
 use crate::cfg::limit;
 use crate::err::error;
 use crate::cfg::common;
+use crate::numa::util;
 use crate::cfg::interface::Verify;
 use tinyjson::{JsonValue};
 use std::collections::HashMap;
@@ -238,6 +239,34 @@ impl Transport {
   }
 }
 
+struct TransportSet {
+  pub name: String,
+  pub nic: NIC,
+  pub rxqVec: Vec<NICQueue>,
+  pub txqVec: Vec<NICQueue>,
+  pub srptVec: Vec<common::SRPT>,
+  pub hugePageVec: Vec<common::HugePage>,
+  pub heapAllocVec: Vec<common::HeapAllocator>,
+  pub childAllocVec: Vec<common::ChildAllocator>,
+  pub transportVec: Vec<Transport>,
+}
+
+impl TransportSet {
+  pub fn new() -> Self {
+    Self {
+      name: String::new(),
+      nic: NIC::new(),
+      rxqVec: Vec::new(),
+      txqVec: Vec::new(),
+      srptVec: Vec::new(),
+      hugePageVec: Vec::new(),
+      heapAllocVec: Vec::new(),
+      childAllocVec: Vec::new(),
+      transportVec: Vec::new(),
+    }
+  }
+}
+
 struct Tag;
 
 impl Tag {
@@ -294,29 +323,15 @@ impl Tag {
 }
 
 pub struct TestNIC {
-  nicMap: HashMap<String, NIC>,
   nameMap: HashMap<String, bool>,
-  rxqMap: HashMap<String, NICQueue>,
-  txqMap: HashMap<String, NICQueue>,
-  srptMap: HashMap<String, common::SRPT>,
-  hugePageMap: HashMap<String, common::HugePage>,
-  heapAllocMap: HashMap<String, common::HeapAllocator>,
-  childAllocMap: HashMap<String, common::ChildAllocator>,
-  transportMap: HashMap<String, Transport>,
+  transportSetVec: Vec<TransportSet>,
 }
 
 impl TestNIC {
   pub fn new() -> Self {
     Self {
-      nicMap: HashMap::new(),
       nameMap: HashMap::new(),
-      rxqMap: HashMap::new(),
-      txqMap: HashMap::new(),
-      srptMap: HashMap::new(),
-      hugePageMap: HashMap::new(),
-      heapAllocMap: HashMap::new(),
-      childAllocMap: HashMap::new(),
-      transportMap: HashMap::new(),
+      transportSetVec: Vec::new(),
     }
   }
 
@@ -470,6 +485,15 @@ impl TestNIC {
       return Err(error::Error::JSONSchema);
     }
 
+    // Get the transportSet for these hugePages
+    let transportSet = match self.transportSetVec.last_mut() {
+      Some(obj) => obj,
+      None => {
+        log::error!("'{}' object '{}' internal error: transport set not found", Tag::HugePage, parentName);
+        return Err(error::Error::JSONSchema);
+      }
+    };
+
     // Visit each item in ary
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
@@ -489,8 +513,7 @@ impl TestNIC {
 
       // Create huge page object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
-      debug_assert!(!self.hugePageMap.contains_key(fqn.as_str()));
-      let hp = self.hugePageMap.entry(fqn.clone()).or_insert(common::HugePage::new());
+      let hp = transportSet.hugePageVec.push_mut(common::HugePage::new());
 
       // Find all other key-value pairs
       let map: &HashMap<_, _> = item.get().unwrap();
@@ -538,6 +561,15 @@ impl TestNIC {
       return Err(error::Error::JSONSchema);
     }
 
+    // Get the transportSet for these heapAllocators
+    let transportSet = match self.transportSetVec.last_mut() {
+      Some(obj) => obj,
+      None => {
+        log::error!("'{}' object '{}' internal error: transport set not found", Tag::HeapAllocator, parentName);
+        return Err(error::Error::JSONSchema);
+      }
+    };
+
     // Visit each item in ary
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
@@ -555,10 +587,9 @@ impl TestNIC {
 
       log::debug!("parsing  '{}' '{}'", Tag::HeapAllocator, fqn);
 
-      // Create child allocator object
+      // Create heap allocator object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
-      debug_assert!(!self.heapAllocMap.contains_key(fqn.as_str()));
-      let hp = self.heapAllocMap.entry(fqn.clone()).or_insert(common::HeapAllocator::new());
+      let hp = transportSet.heapAllocVec.push_mut(common::HeapAllocator::new());
 
       // Find all other key-value pairs
       let map: &HashMap<_, _> = item.get().unwrap();
@@ -600,6 +631,15 @@ impl TestNIC {
       return Err(error::Error::JSONSchema);
     }
 
+    // Get the transportSet for these childAllocators
+    let transportSet = match self.transportSetVec.last_mut() {
+      Some(obj) => obj,
+      None => {
+        log::error!("'{}' object '{}' internal error: transport set not found", Tag::ChildAllocator, parentName);
+        return Err(error::Error::JSONSchema);
+      }
+    };
+
     // Visit each item in ary
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
@@ -619,8 +659,7 @@ impl TestNIC {
 
       // Create child allocator object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
-      debug_assert!(!self.childAllocMap.contains_key(fqn.as_str()));
-      let hp = self.childAllocMap.entry(fqn.clone()).or_insert(common::ChildAllocator::new());
+      let hp = transportSet.childAllocVec.push_mut(common::ChildAllocator::new());
 
       // Find all other key-value pairs
       let map: &HashMap<_, _> = item.get().unwrap();
@@ -668,6 +707,15 @@ impl TestNIC {
       return Err(error::Error::JSONSchema);
     }
 
+    // Get the transportSet for these childAllocators
+    let transportSet = match self.transportSetVec.last_mut() {
+      Some(obj) => obj,
+      None => {
+        log::error!("'{}' object '{}' internal error: transport set not found", Tag::SRPT, parentName);
+        return Err(error::Error::JSONSchema);
+      }
+    };
+
     // Visit each item in ary
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
@@ -687,8 +735,7 @@ impl TestNIC {
 
       // Create SRPT object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
-      debug_assert!(!self.srptMap.contains_key(fqn.as_str()));
-      let hp = self.srptMap.entry(fqn.clone()).or_insert(common::SRPT::new());
+      let hp = transportSet.srptVec.push_mut(common::SRPT::new());
       hp.name = name;
 
       // Process required SRPT fields
@@ -762,6 +809,15 @@ impl TestNIC {
       return Err(error::Error::JSONSchema);
     }
 
+    // Get the transportSet for this NIC
+    let transportSet = match self.transportSetVec.last_mut() {
+      Some(obj) => obj,
+      None => {
+        log::error!("'{}' object '{}' internal error: transport set not found", Tag::NIC, parentName);
+        return Err(error::Error::JSONSchema);
+      }
+    };
+
     // Make fqn for NIC
     let mut name = String::new();
     let fqn = match TestNIC::findAndAddName(obj, &mut name, &mut self.nameMap, Tag::NIC, parentName) {
@@ -771,11 +827,9 @@ impl TestNIC {
 
     log::debug!("parsing  '{}' '{}'", Tag::NIC, fqn);
 
-    // Create nIC
+    // Create NIC
     debug_assert!(self.nameMap.contains_key(fqn.as_str()));
-    debug_assert!(!self.nicMap.contains_key(fqn.as_str()));
-    let hp = self.nicMap.entry(fqn.clone()).or_insert(NIC::new());
-    hp.name = name;
+    transportSet.nic.name = name;
 
     // Process required NIC fields
     let map: &HashMap<_, _> = obj.get().unwrap();
@@ -783,43 +837,43 @@ impl TestNIC {
       match key.as_str() {
         Tag::Name => {}
         Tag::MACAddress => {
-          match TestNIC::jsonString(value, &mut hp.macAddress, &fqn, Tag::NIC, key) {
+          match TestNIC::jsonString(value, &mut transportSet.nic.macAddress, &fqn, Tag::NIC, key) {
             Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::IPV4Address => {
-          match TestNIC::jsonString(value, &mut hp.ipv4Address, &fqn, Tag::NIC, key) {
+          match TestNIC::jsonString(value, &mut transportSet.nic.ipv4Address, &fqn, Tag::NIC, key) {
             Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::IPV6Address => {
-          match TestNIC::jsonString(value, &mut hp.ipv6Address, &fqn, Tag::NIC, key) {
+          match TestNIC::jsonString(value, &mut transportSet.nic.ipv6Address, &fqn, Tag::NIC, key) {
             Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::PciDeviceId => {
-          match TestNIC::jsonString(value, &mut hp.pciAddress, &fqn, Tag::NIC, key) {
+          match TestNIC::jsonString(value, &mut transportSet.nic.pciAddress, &fqn, Tag::NIC, key) {
             Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::MTUSizeBytes => {
-          match TestNIC::jsonInteger(value, &mut hp.mtuSizeBytes, &fqn, Tag::NIC, key) {
+          match TestNIC::jsonInteger(value, &mut transportSet.nic.mtuSizeBytes, &fqn, Tag::NIC, key) {
             Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::LinkSpeedGbit => {
-          match TestNIC::jsonInteger(value, &mut hp.linkSpeedGbit, &fqn, Tag::NIC, key) {
+          match TestNIC::jsonInteger(value, &mut transportSet.nic.linkSpeedGbit, &fqn, Tag::NIC, key) {
             Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::MaximumTransports => {
-          match TestNIC::jsonInteger(value, &mut hp.maxTransports, &fqn, Tag::NIC, key) {
+          match TestNIC::jsonInteger(value, &mut transportSet.nic.maxTransports, &fqn, Tag::NIC, key) {
             Ok(_) => {}
             Err(err) => { return Err(err); }
           };
@@ -841,6 +895,15 @@ impl TestNIC {
       return Err(error::Error::JSONSchema);
     }
 
+    // Get the transportSet for this NIC queue
+    let transportSet = match self.transportSetVec.last_mut() {
+      Some(obj) => obj,
+      None => {
+        log::error!("'{}' object '{}' internal error: transport set not found", Tag::RXQ, parentName);
+        return Err(error::Error::JSONSchema);
+      }
+    };
+
     // Visit each item in ary
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
@@ -858,10 +921,9 @@ impl TestNIC {
 
       log::debug!("parsing  '{}' '{}'", Tag::RXQ, fqn);
 
-      // Create NIC queue object
+      // Create RXQ queue object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
-      debug_assert!(!self.rxqMap.contains_key(fqn.as_str()));
-      let hp = self.rxqMap.entry(fqn.clone()).or_insert(NICQueue::new());
+      let hp = transportSet.rxqVec.push_mut(NICQueue::new());
       hp.name = name;
 
       // Find all other key-value pairs
@@ -899,6 +961,15 @@ impl TestNIC {
       return Err(error::Error::JSONSchema);
     }
 
+    // Get the transportSet for this NIC queue
+    let transportSet = match self.transportSetVec.last_mut() {
+      Some(obj) => obj,
+      None => {
+        log::error!("'{}' object '{}' internal error: transport set not found", Tag::TXQ, parentName);
+        return Err(error::Error::JSONSchema);
+      }
+    };
+
     // Visit each item in ary
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
@@ -916,10 +987,9 @@ impl TestNIC {
 
       log::debug!("parsing  '{}' '{}'", Tag::TXQ, fqn);
 
-      // Create NIC queue object
+      // Create TXQ queue object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
-      debug_assert!(!self.txqMap.contains_key(fqn.as_str()));
-      let hp = self.txqMap.entry(fqn.clone()).or_insert(NICQueue::new());
+      let hp = transportSet.txqVec.push_mut(NICQueue::new());
 
       // Find all other key-value pairs
       let map: &HashMap<_, _> = item.get().unwrap();
@@ -961,6 +1031,15 @@ impl TestNIC {
       return Err(error::Error::JSONSchema);
     }
 
+    // Get the transportSet for transports
+    let transportSet = match self.transportSetVec.last_mut() {
+      Some(obj) => obj,
+      None => {
+        log::error!("'{}' object '{}' internal error: transport set not found", Tag::RXQ, parentName);
+        return Err(error::Error::JSONSchema);
+      }
+    };
+
     // Visit each item in ary
     let ary: &Vec<_> = array.get().unwrap();
     for item in ary {
@@ -980,8 +1059,7 @@ impl TestNIC {
 
       // Create transport
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
-      debug_assert!(!self.transportMap.contains_key(fqn.as_str()));
-      let hp = self.transportMap.entry(fqn.clone()).or_insert(Transport::new());
+      let hp = transportSet.transportVec.push_mut(Transport::new());
       hp.name = name;
 
       // Process required transport fields
@@ -1107,6 +1185,17 @@ impl TestNIC {
       Err(err) => { return Err(err); }
     };
 
+    // Append new transportSet
+    self.transportSetVec.push(TransportSet::new());
+    // Get the transportSet for transports
+    match self.transportSetVec.last_mut() {
+      Some(obj) => { obj.name = fqn.clone(); }
+      None => {
+        log::error!("'{}' object '{}' internal error: transport set not found", fqn, parentName);
+        return Err(error::Error::JSONSchema);
+      }
+    };
+
     log::debug!("parsing '{}'", fqn);
 
     // Get inner object then find, parse sub-objects
@@ -1180,81 +1269,95 @@ impl TestNIC {
   }
 
   fn verifyObjects(&self) -> Result<(), error::Error> {
-    for (k,v) in &self.nicMap {
-      match v.verify(self) {
+    for transportSet in &self.transportSetVec {
+      match transportSet.nic.verify(self) {
         Ok(_) => {},
         Err(err) => {
-          log::error!("object '{}' invalid contents: {:?}", k, err);
+          log::error!("object '{}.{}' invalid contents: {:?}", transportSet.name, transportSet.nic.name, err);
           return Err(err);
+        }
+      }
+
+      for item in &transportSet.rxqVec {
+        match item.verify() {
+          Ok(_) => {},
+          Err(err) => {
+            log::error!("object '{}.{}' invalid contents: {:?}", transportSet.name, item.name, err);
+            return Err(err);
+          }
+        }
+      }
+
+      for item in &transportSet.txqVec {
+        match item.verify() {
+          Ok(_) => {},
+          Err(err) => {
+            log::error!("object '{}.{}' invalid contents: {:?}", transportSet.name, item.name, err);
+            return Err(err);
+          }
+        }
+      }
+
+      for item in &transportSet.srptVec {
+        match item.verify() {
+          Ok(_) => {},
+          Err(err) => {
+            log::error!("object '{}.{}' invalid contents: {:?}", transportSet.name, item.name, err);
+            return Err(err);
+          }
+        }
+      }
+
+      for item in &transportSet.hugePageVec {
+        match item.verify() {
+          Ok(_) => {},
+          Err(err) => {
+            log::error!("object '{}.{}' invalid contents: {:?}", transportSet.name, item.name, err);
+            return Err(err);
+          }
+        }
+      }
+
+      for item in &transportSet.heapAllocVec {
+        match item.verify() {
+          Ok(_) => {},
+          Err(err) => {
+            log::error!("object '{}.{}' invalid contents: {:?}", transportSet.name, item.name, err);
+            return Err(err);
+          }
+        }
+      }
+
+      for item in &transportSet.childAllocVec {
+        match item.verify() {
+          Ok(_) => {},
+          Err(err) => {
+            log::error!("object '{}.{}' invalid contents: {:?}", transportSet.name, item.name, err);
+            return Err(err);
+          }
+        }
+      }
+
+      for item in &transportSet.transportVec {
+        match item.verify() {
+          Ok(_) => {},
+          Err(err) => {
+            log::error!("object '{}.{}' invalid contents: {:?}", transportSet.name, item.name, err);
+            return Err(err);
+          }
         }
       }
     }
 
-    for (k,v) in &self.rxqMap {
-      match v.verify() {
-        Ok(_) => {},
-        Err(err) => {
-          log::error!("object '{}' invalid contents: {:?}", k, err);
-          return Err(err);
-        }
-      }
-    }
+    return Ok(());
+  }
 
-    for (k,v) in &self.txqMap {
-      match v.verify() {
-        Ok(_) => {},
+  fn numaLookups(&mut self) -> Result<(), error::Error> {
+    for transportSet in &self.transportSetVec.iter_mut() {
+      match util::pciNumaNode(&transportSet.nic.pciAddress) {
+        Ok(val) => { transportSet.nic.numaNode = val; },
         Err(err) => {
-          log::error!("object '{}' invalid contents: {:?}", k, err);
-          return Err(err);
-        }
-      }
-    }
-
-    for (k,v) in &self.srptMap {
-      match v.verify() {
-        Ok(_) => {},
-        Err(err) => {
-          log::error!("object '{}' invalid contents: {:?}", k, err);
-          return Err(err);
-        }
-      }
-    }
-
-    for (k,v) in &self.hugePageMap {
-      match v.verify() {
-        Ok(_) => {},
-        Err(err) => {
-          log::error!("object '{}' invalid contents: {:?}", k, err);
-          return Err(err);
-        }
-      }
-    }
-
-    for (k,v) in &self.heapAllocMap {
-      match v.verify() {
-        Ok(_) => {},
-        Err(err) => {
-          log::error!("object '{}' invalid contents: {:?}", k, err);
-          return Err(err);
-        }
-      }
-    }
-
-    for (k,v) in &self.childAllocMap {
-      match v.verify() {
-        Ok(_) => {},
-        Err(err) => {
-          log::error!("object '{}' invalid contents: {:?}", k, err);
-          return Err(err);
-        }
-      }
-    }
-
-    for (k,v) in &self.transportMap {
-      match v.verify() {
-        Ok(_) => {},
-        Err(err) => {
-          log::error!("object '{}' invalid contents: {:?}", k, err);
+          log::error!("object '{}.{}' invalid contents: {:?}", transportSet.name, transportSet.nic.name, err);
           return Err(err);
         }
       }
@@ -1306,13 +1409,17 @@ impl Verify for TestNIC {
       }
     };
 
+    // Do NUMA lookups
+    match self.numaLookups() {
+      Ok(_) => {},
+      Err(err) => { return Err(err); }
+    };
+
     // Do simple verifications not needing cross-verify
     match self.verifyObjects() {
       Ok(_) => {},
       Err(err) => { return Err(err); }
     };
-    
-
 
     return Ok(());
   }

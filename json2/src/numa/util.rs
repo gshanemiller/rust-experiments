@@ -12,7 +12,7 @@ fn ubuntuPciNumaNode(addr: &String) -> Result<u32, error::Error> {
   let data = match dataResult {
     Ok(val) => val,
     Err(err) => {
-      log::error!(target: "numa", "open '{}': {:?}", fname, err);
+      log::error!("open '{}': {:?}", fname, err);
       return Err(error::Error::Io(err));
     }
   };
@@ -21,11 +21,11 @@ fn ubuntuPciNumaNode(addr: &String) -> Result<u32, error::Error> {
   let parseResult = u32::from_str_radix(data.trim_end(), 10);
   let numaNode = match parseResult {
     Ok(val) => {
-      log::trace!(target: "numa", "read '{}': '{:?}' asInt {}", fname, data.trim_end(), val);
+      log::trace!("read '{}': '{}' asInt {}", fname, data.trim_end(), val);
       val
     }
     Err(err) => {
-      log::error!(target: "numa", "read '{}': '{:?}': {:?}", fname, data.trim_end(), err);
+      log::error!("read '{}': '{}': {:?}", fname, data.trim_end(), err);
       return Err(error::Error::Num(err));
     }
   };
@@ -41,7 +41,7 @@ fn ubuntuIsCpuOnNumaNode(cpuHwCore: u32, numaNode: u32) -> Result<bool, error::E
   let data = match dataResult {
     Ok(val) => val,
     Err(err) => {
-      log::error!(target: "numa", "open '{}': {:?}", fname, err);
+      log::error!("open '{}': {:?}", fname, err);
       return Err(error::Error::Io(err));
     }
   };
@@ -50,11 +50,11 @@ fn ubuntuIsCpuOnNumaNode(cpuHwCore: u32, numaNode: u32) -> Result<bool, error::E
   let parseResult = u64::from_str_radix(data.trim_end(), 16);
   let cpuMask = match parseResult {
     Ok(val) => {
-      log::trace!(target: "numa", "read '{}': '{:?}' asInt {}", fname, data.trim_end(), val);
+      log::trace!("read '{}': '{:?}' asInt {}", fname, data.trim_end(), val);
       val
     }
     Err(err) => {
-      log::error!(target: "numa", "read '{}': '{:?}': {:?}", fname, data.trim_end(), err);
+      log::error!("read '{}': '{:?}': {:?}", fname, data.trim_end(), err);
       return Err(error::Error::Num(err));
     }
   };
