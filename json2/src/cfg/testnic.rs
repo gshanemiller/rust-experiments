@@ -313,24 +313,6 @@ impl TestNIC {
     }
   }
 
-  fn createHugePage(&mut self, key: &str) -> Option<&mut common::HugePage> {
-    debug_assert!(self.nameMap.contains_key(key));
-    debug_assert!(!self.hugePageMap.contains_key(key));
-    return Some(self.hugePageMap.entry(key.to_string()).or_insert(common::HugePage::new()));
-  }
-
-  fn createHeapAllocator(&mut self, key: &str) -> Option<&mut common::HeapAllocator> {
-    debug_assert!(self.nameMap.contains_key(key));
-    debug_assert!(!self.heapAllocMap.contains_key(key));
-    return Some(self.heapAllocMap.entry(key.to_string()).or_insert(common::HeapAllocator::new()));
-  }
-
-  fn createChildAllocator(&mut self, key: &str) -> Option<&mut common::ChildAllocator> {
-    debug_assert!(self.nameMap.contains_key(key));
-    debug_assert!(!self.childAllocMap.contains_key(key));
-    return Some(self.childAllocMap.entry(key.to_string()).or_insert(common::ChildAllocator::new()));
-  }
-
   fn jsonInteger(obj: &JsonValue, value: &mut u32, fqn: &String, objKind: &str, key: &str) -> Result<(), error::Error> {
     if obj.is_number() {
       // API forces f64, so make sure it's an integer
@@ -403,6 +385,40 @@ impl TestNIC {
     }
   }
 
+  fn parseEndpoint(obj: &JsonValue, endPoint: &mut common::VLANPort, fqn: &String, kind: &str, parentKey: &str, _isIPV4: bool)
+    -> Result<(), error::Error> {
+    // Make sure it's an object
+    if !obj.is_object() {
+      log::error!("'{}' object '{}.{}' not an object", kind, fqn, parentKey);
+      return Err(error::Error::JSONSchema);
+    }
+
+    // Process required endpoint fields
+    let map: &HashMap<_, _> = obj.get().unwrap();
+    for (key, value) in map {
+      match key.as_str() {
+        Tag::Port => {
+          match TestNIC::jsonInteger(value, &mut endPoint.port, &fqn, Tag::Transport, key) {
+            Ok(_) => {}
+            Err(err) => { return Err(err); }
+          };
+        }
+        Tag::VLANId => {
+          match TestNIC::jsonInteger(value, &mut endPoint.vlan, &fqn, Tag::Transport, key) {
+            Ok(_) => {}
+            Err(err) => { return Err(err); }
+          };
+        }
+        _ => {
+          log::error!("'{}' object '{}.{}.{}' unknown", Tag::TXQ, fqn, parentKey, key);
+          return Err(error::Error::JSONSchema);
+        }
+      };
+    }
+
+    return Ok(());
+  }
+
   fn findAndAddName(parentObj: &JsonValue, nameMap: &mut HashMap<String, bool>, kind: &str, parentName: &str)
     -> Result<String, error::Error> {
     debug_assert!(parentObj.is_object());
@@ -465,7 +481,7 @@ impl TestNIC {
       // Create huge page object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
       debug_assert!(!self.hugePageMap.contains_key(fqn.as_str()));
-      let mut hp = self.hugePageMap.entry(fqn.clone()).or_insert(common::HugePage::new());
+      let hp = self.hugePageMap.entry(fqn.clone()).or_insert(common::HugePage::new());
 
       // Find all other key-value pairs
       let map: &HashMap<_, _> = item.get().unwrap();
@@ -474,23 +490,23 @@ impl TestNIC {
           Tag::Name => {}
           Tag::PageCount => {
             match TestNIC::jsonInteger(value, &mut hp.pageCount, &fqn, Tag::HugePage, key) {
-              Ok(val) => {}
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
           Tag::PageSizeKB => {
             match TestNIC::jsonInteger(value, &mut hp.pageSizeKB, &fqn, Tag::HugePage, key) {
-              Ok(val) => {}
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
           Tag::ByteAlignment => {
             match TestNIC::jsonInteger(value, &mut hp.byteAlignment, &fqn, Tag::HugePage, key) {
-              Ok(val) => {}
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
-          other => {
+          _ => {
             log::error!("'{}' object '{}.{}' unknown", Tag::HugePage, fqn, key);
             return Err(error::Error::JSONSchema);
           }
@@ -536,7 +552,7 @@ impl TestNIC {
       // Create child allocator object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
       debug_assert!(!self.heapAllocMap.contains_key(fqn.as_str()));
-      let mut hp = self.heapAllocMap.entry(fqn.clone()).or_insert(common::HeapAllocator::new());
+      let hp = self.heapAllocMap.entry(fqn.clone()).or_insert(common::HeapAllocator::new());
 
       // Find all other key-value pairs
       let map: &HashMap<_, _> = item.get().unwrap();
@@ -545,17 +561,17 @@ impl TestNIC {
           Tag::Name => {}
           Tag::SizeKB => {
             match TestNIC::jsonInteger(value, &mut hp.sizeKB, &fqn, Tag::HeapAllocator, key) {
-              Ok(val) => {}
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
           Tag::ByteAlignment => {
             match TestNIC::jsonInteger(value, &mut hp.byteAlignment, &fqn, Tag::HeapAllocator, key) {
-              Ok(val) => {}
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
-          other => {
+          _ => {
             log::error!("'{}' object '{}.{}' unknown", Tag::HeapAllocator, fqn, key);
             return Err(error::Error::JSONSchema);
           }
@@ -601,7 +617,7 @@ impl TestNIC {
       // Create child allocator object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
       debug_assert!(!self.childAllocMap.contains_key(fqn.as_str()));
-      let mut hp = self.childAllocMap.entry(fqn.clone()).or_insert(common::ChildAllocator::new());
+      let hp = self.childAllocMap.entry(fqn.clone()).or_insert(common::ChildAllocator::new());
 
       // Find all other key-value pairs
       let map: &HashMap<_, _> = item.get().unwrap();
@@ -610,23 +626,23 @@ impl TestNIC {
           Tag::Name => {}
           Tag::ParentName => {
             match TestNIC::jsonString(value, &mut hp.parentName, &fqn, Tag::ChildAllocator, key) {
-              Ok(val) => {}
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
           Tag::SizeKB => {
             match TestNIC::jsonInteger(value, &mut hp.sizeKB, &fqn, Tag::ChildAllocator, key) {
-              Ok(val) => {}
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
           Tag::ByteAlignment => {
             match TestNIC::jsonInteger(value, &mut hp.byteAlignment, &fqn, Tag::ChildAllocator, key) {
-              Ok(val) => {}
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
-          other => {
+          _ => {
             log::error!("'{}' object '{}.{}' unknown", Tag::ChildAllocator, fqn, key);
             return Err(error::Error::JSONSchema);
           }
@@ -664,7 +680,7 @@ impl TestNIC {
     // Create SRPT
     debug_assert!(self.nameMap.contains_key(fqn.as_str()));
     debug_assert!(!self.srptMap.contains_key(fqn.as_str()));
-    let mut hp = self.srptMap.entry(fqn.clone()).or_insert(common::SRPT::new());
+    let hp = self.srptMap.entry(fqn.clone()).or_insert(common::SRPT::new());
 
     // Process required SRPT fields
     let map: &HashMap<_, _> = obj.get().unwrap();
@@ -673,53 +689,53 @@ impl TestNIC {
         Tag::Name => {}
         Tag::Capacity => {
           match TestNIC::jsonInteger(value, &mut hp.capacity, &fqn, Tag::SRPT, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::OverCommitmentCount => {
           match TestNIC::jsonInteger(value, &mut hp.overCommitmentCount, &fqn, Tag::SRPT, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::ResponseRingCount => {
           match TestNIC::jsonInteger(value, &mut hp.responseRingCount, &fqn, Tag::SRPT, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::RequestRingCount => {
           match TestNIC::jsonInteger(value, &mut hp.requestRingCount, &fqn, Tag::SRPT, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::CPU => {
           match TestNIC::jsonInteger(value, &mut hp.cpu, &fqn, Tag::SRPT, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::AllocatorName => {
           match TestNIC::jsonString(value, &mut hp.allocatorName, &fqn, Tag::SRPT, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::UnscheduledPriority => {
           match TestNIC::jsonArray(value, &mut hp.unscheduledPriority, &fqn, Tag::SRPT, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::ScheduledPriority => {
           match TestNIC::jsonArray(value, &mut hp.scheduledPriority, &fqn, Tag::SRPT, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
-        other => {
+        _ => {
           log::error!("'{}' object '{}.{}' unexpected", Tag::SRPT, fqn, key);
           return Err(error::Error::JSONSchema);
         }
@@ -756,7 +772,7 @@ impl TestNIC {
     // Create nIC
     debug_assert!(self.nameMap.contains_key(fqn.as_str()));
     debug_assert!(!self.nicMap.contains_key(fqn.as_str()));
-    let mut hp = self.nicMap.entry(fqn.clone()).or_insert(NIC::new());
+    let hp = self.nicMap.entry(fqn.clone()).or_insert(NIC::new());
 
     // Process required NIC fields
     let map: &HashMap<_, _> = obj.get().unwrap();
@@ -765,47 +781,47 @@ impl TestNIC {
         Tag::Name => {}
         Tag::MACAddress => {
           match TestNIC::jsonString(value, &mut hp.macAddress, &fqn, Tag::NIC, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::IPV4Address => {
           match TestNIC::jsonString(value, &mut hp.ipv4Address, &fqn, Tag::NIC, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::IPV6Address => {
           match TestNIC::jsonString(value, &mut hp.ipv6Address, &fqn, Tag::NIC, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::PciDeviceId => {
           match TestNIC::jsonString(value, &mut hp.pciAddress, &fqn, Tag::NIC, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::MTUSizeBytes => {
           match TestNIC::jsonInteger(value, &mut hp.mtuSizeBytes, &fqn, Tag::NIC, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::LinkSpeedGbit => {
           match TestNIC::jsonInteger(value, &mut hp.linkSpeedGbit, &fqn, Tag::NIC, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
         Tag::MaximumTransports => {
           match TestNIC::jsonInteger(value, &mut hp.maxTransports, &fqn, Tag::NIC, key) {
-            Ok(val) => {}
+            Ok(_) => {}
             Err(err) => { return Err(err); }
           };
         }
-        other => {
+        _ => {
           log::error!("'{}' object '{}.{}' unexpected", Tag::NIC, fqn, key);
           return Err(error::Error::JSONSchema);
         }
@@ -850,7 +866,7 @@ impl TestNIC {
       // Create NIC queue object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
       debug_assert!(!self.rxqMap.contains_key(fqn.as_str()));
-      let mut hp = self.rxqMap.entry(fqn.clone()).or_insert(NICQueue::new());
+      let hp = self.rxqMap.entry(fqn.clone()).or_insert(NICQueue::new());
 
       // Find all other key-value pairs
       let map: &HashMap<_, _> = item.get().unwrap();
@@ -859,17 +875,17 @@ impl TestNIC {
           Tag::Name => {}
           Tag::RingSize => {
             match TestNIC::jsonInteger(value, &mut hp.ringSize, &fqn, Tag::RXQ, key) {
-              Ok(val) => {}
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
           Tag::AllocatorName => {
             match TestNIC::jsonString(value, &mut hp.allocatorName, &fqn, Tag::RXQ, key) {
-              Ok(val) => {}
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
-          other => {
+          _ => {
             log::error!("'{}' object '{}.{}' unknown", Tag::RXQ, fqn, key);
             return Err(error::Error::JSONSchema);
           }
@@ -915,7 +931,7 @@ impl TestNIC {
       // Create NIC queue object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
       debug_assert!(!self.txqMap.contains_key(fqn.as_str()));
-      let mut hp = self.txqMap.entry(fqn.clone()).or_insert(NICQueue::new());
+      let hp = self.txqMap.entry(fqn.clone()).or_insert(NICQueue::new());
 
       // Find all other key-value pairs
       let map: &HashMap<_, _> = item.get().unwrap();
@@ -924,17 +940,17 @@ impl TestNIC {
           Tag::Name => {}
           Tag::RingSize => {
             match TestNIC::jsonInteger(value, &mut hp.ringSize, &fqn, Tag::TXQ, key) {
-              Ok(val) => {}
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
           Tag::AllocatorName => {
             match TestNIC::jsonString(value, &mut hp.allocatorName, &fqn, Tag::TXQ, key) {
-              Ok(val) => {}
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
-          other => {
+          _ => {
             log::error!("'{}' object '{}.{}' unknown", Tag::TXQ, fqn, key);
             return Err(error::Error::JSONSchema);
           }
@@ -980,7 +996,7 @@ impl TestNIC {
       // Create transport
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
       debug_assert!(!self.transportMap.contains_key(fqn.as_str()));
-      let mut hp = self.transportMap.entry(fqn.clone()).or_insert(Transport::new());
+      let hp = self.transportMap.entry(fqn.clone()).or_insert(Transport::new());
 
       // Process required transport fields
       let map: &HashMap<_, _> = item.get().unwrap();
@@ -988,33 +1004,53 @@ impl TestNIC {
         match key.as_str() {
           Tag::Name => {}
           Tag::CPU => {
-            match TestNIC::jsonInteger(value, &mut hp.cpu, &fqn, Tag::NIC, key) {
-              Ok(val) => {}
+            match TestNIC::jsonInteger(value, &mut hp.cpu, &fqn, Tag::Transport, key) {
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
           Tag::ReadyCapacity => {
-            match TestNIC::jsonInteger(value, &mut hp.readyCapacity, &fqn, Tag::NIC, key) {
-              Ok(val) => {}
+            match TestNIC::jsonInteger(value, &mut hp.readyCapacity, &fqn, Tag::Transport, key) {
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
           Tag::ReserveCapacity => {
-            match TestNIC::jsonInteger(value, &mut hp.reserveCapacity, &fqn, Tag::NIC, key) {
-              Ok(val) => {}
+            match TestNIC::jsonInteger(value, &mut hp.reserveCapacity, &fqn, Tag::Transport, key) {
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
           Tag::CallbackCapacity => {
-            match TestNIC::jsonInteger(value, &mut hp.callbackCapacity, &fqn, Tag::NIC, key) {
-              Ok(val) => {}
+            match TestNIC::jsonInteger(value, &mut hp.callbackCapacity, &fqn, Tag::Transport, key) {
+              Ok(_) => {}
               Err(err) => { return Err(err); }
             };
           }
-          // Tag::IPV4Endpoint => {}
-          // Tag::IPV6Endpoint => {}
-          // Tag::ErrorIPV4Endpoint => {}
-          // Tag::ErrorIPV6Endpoint => {}
+          Tag::IPV4Endpoint => {
+            match TestNIC::parseEndpoint(value, &mut hp.ipv4Suffix, &fqn, Tag::Transport, key, true) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::IPV6Endpoint => {
+            match TestNIC::parseEndpoint(value, &mut hp.ipv6Suffix, &fqn, Tag::Transport, key, false) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::ErrorIPV4Endpoint => {
+            match TestNIC::parseEndpoint(value, &mut hp.ipv4ErrorSuffix, &fqn, Tag::Transport, key, true) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::ErrorIPV6Endpoint => {
+            match TestNIC::parseEndpoint(value, &mut hp.ipv6ErrorSuffix, &fqn, Tag::Transport, key, false) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
           Tag::QueuePair => {
             if !value.is_array() {
               log::error!("'{}' object '{}.{}' not array", Tag::Transport, fqn, key);
@@ -1029,29 +1065,36 @@ impl TestNIC {
               let mut subHp = NICQueuePair::new(); 
               let subMap: &HashMap<_, _> = subItem.get().unwrap();
               for (subKey, subValue) in subMap {
-                match key.as_str() {
+                match subKey.as_str() {
                   Tag::RXQName => {
                     match TestNIC::jsonString(subValue, &mut subHp.rxq, &fqn, Tag::Transport, subKey) {
-                      Ok(val) => {}
+                      Ok(_) => {}
                       Err(err) => { return Err(err); }
                     };
                   }
                   Tag::TXQName => {
                     match TestNIC::jsonString(subValue, &mut subHp.txq, &fqn, Tag::Transport, subKey) {
-                      Ok(val) => {}
+                      Ok(_) => {}
                       Err(err) => { return Err(err); }
                     };
                   }
-                  other => {
+                  _ => {
                     log::error!("'{}' object '{}.{}.{}' unknown", Tag::Transport, fqn, key, subKey);
                     return Err(error::Error::JSONSchema);
                   }
                 };
               }
+              // Save it
               hp.queuePair.push(subHp);
             }
           }
-          other => {
+          Tag::AllocatorName => {
+            match TestNIC::jsonString(value, &mut hp.allocatorName, &fqn, Tag::TXQ, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          _ => {
             log::error!("'{}' object '{}.{}' unknown", Tag::Transport, fqn, key);
             return Err(error::Error::JSONSchema);
           }
@@ -1078,7 +1121,7 @@ impl TestNIC {
 
     // Parse HugePageAllocator(s)
     if map.contains_key(Tag::HugePage) {
-      let result = match self.parseHugePage(&fqn, &item[Tag::HugePage]) {
+      match self.parseHugePage(&fqn, &item[Tag::HugePage]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -1086,7 +1129,7 @@ impl TestNIC {
 
     // Parse HeapAllocators
     if map.contains_key(Tag::HeapAllocator) {
-      let result = match self.parseHeapAllocator(&fqn, &item[Tag::HeapAllocator]) {
+      match self.parseHeapAllocator(&fqn, &item[Tag::HeapAllocator]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -1094,7 +1137,7 @@ impl TestNIC {
 
     // Parse ChildAllocators
     if map.contains_key(Tag::ChildAllocator) {
-      let result = match self.parseChildAllocator(&fqn, &item[Tag::ChildAllocator]) {
+      match self.parseChildAllocator(&fqn, &item[Tag::ChildAllocator]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -1102,7 +1145,7 @@ impl TestNIC {
 
     // Parse SRPT
     if map.contains_key(Tag::SRPT) {
-      let result = match self.parseSRPT(&fqn, &item[Tag::SRPT]) {
+      match self.parseSRPT(&fqn, &item[Tag::SRPT]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -1110,7 +1153,7 @@ impl TestNIC {
 
     // Parse NIC
     if map.contains_key(Tag::NIC) {
-      let result = match self.parseNIC(&fqn, &item[Tag::NIC]) {
+      match self.parseNIC(&fqn, &item[Tag::NIC]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -1118,7 +1161,7 @@ impl TestNIC {
 
     // Parse RXQ
     if map.contains_key(Tag::RXQ) {
-      let result = match self.parseNICRxq(&fqn, &item[Tag::RXQ]) {
+      match self.parseNICRxq(&fqn, &item[Tag::RXQ]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -1126,7 +1169,7 @@ impl TestNIC {
 
     // Parse TXQ
     if map.contains_key(Tag::TXQ) {
-      let result = match self.parseNICTxq(&fqn, &item[Tag::TXQ]) {
+      match self.parseNICTxq(&fqn, &item[Tag::TXQ]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
@@ -1134,7 +1177,7 @@ impl TestNIC {
 
     // Parse Transport
     if map.contains_key(Tag::Transport) {
-      let result = match self.parseTransport(&fqn, &item[Tag::Transport]) {
+      match self.parseTransport(&fqn, &item[Tag::Transport]) {
         Ok(_) => {},
         Err(err) => { return Err(err); }
       };
