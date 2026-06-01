@@ -50,11 +50,11 @@ fn ubuntuIsCpuOnNumaNode(cpuHwCore: u32, numaNode: u32) -> Result<bool, error::E
   let parseResult = u64::from_str_radix(data.trim_end(), 16);
   let cpuMask = match parseResult {
     Ok(val) => {
-      log::trace!("read '{}': '{:?}' asInt {}", fname, data.trim_end(), val);
+      log::trace!("read '{}': '{}' asInt {}", fname, data.trim_end(), val);
       val
     }
     Err(err) => {
-      log::error!("read '{}': '{:?}': {:?}", fname, data.trim_end(), err);
+      log::error!("read '{}': '{}': {:?}", fname, data.trim_end(), err);
       return Err(error::Error::Num(err));
     }
   };

@@ -1353,13 +1353,35 @@ impl TestNIC {
   }
 
   fn numaLookups(&mut self) -> Result<(), error::Error> {
-    for transportSet in &self.transportSetVec.iter_mut() {
+    for transportSet in &mut self.transportSetVec {
       match util::pciNumaNode(&transportSet.nic.pciAddress) {
         Ok(val) => { transportSet.nic.numaNode = val; },
         Err(err) => {
-          log::error!("object '{}.{}' invalid contents: {:?}", transportSet.name, transportSet.nic.name, err);
+          log::error!("object '{}' NIC '{}' invalid pciAddress: {:?}", transportSet.name, transportSet.nic.name, err);
           return Err(err);
         }
+      }
+
+      for item in &mut transportSet.srptVec {
+        match util::isCpuOnNumaNode(item.cpu, transportSet.nic.numaNode) {
+          Ok(val) => {},
+          Err(err) => {
+            log::error!("object '{}' srptSchedule '{}' cpu {} invalid or not on NIC numaNode {}: {:?}", transportSet.name, item.name,
+              item.cpu, transportSet.nic.numaNode, err);
+            return Err(err);
+          }
+        };
+      }
+
+      for item in &mut transportSet.transportVec {
+        match util::isCpuOnNumaNode(item.cpu, transportSet.nic.numaNode) {
+          Ok(val) => {},
+          Err(err) => {
+            log::error!("object '{}' transport '{}' cpu {} invalid or not on NIC numaNode {}: {:?}", transportSet.name, item.name,
+              item.cpu, transportSet.nic.numaNode, err);
+            return Err(err);
+          }
+        };
       }
     }
 
