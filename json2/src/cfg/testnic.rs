@@ -6,6 +6,7 @@ use tinyjson::{JsonValue};
 use std::collections::HashMap;
 
 struct NIC {
+  pub name: String,
   pub macAddress: String,
   pub srptName: String,
   pub ipv4Address: String,
@@ -21,6 +22,7 @@ struct NIC {
 impl NIC {
   pub fn new() -> Self {
     Self {
+      name: String::new(),
       macAddress: String::new(),
       srptName: String::new(),
       ipv4Address: String::new(),
@@ -97,6 +99,7 @@ impl NIC {
 }
 
 struct NICQueue {
+  pub name: String,
   pub ringSize: u32,
   pub allocatorName: String,
 }
@@ -104,6 +107,7 @@ struct NICQueue {
 impl NICQueue {
   pub fn new() -> Self {
     Self {
+      name: String::new(),
       ringSize: 0,
       allocatorName: String::new(),
     }
@@ -153,6 +157,7 @@ impl NICQueuePair {
 }
 
 struct Transport {
+  pub name: String,
   pub nicName: String,
   pub queuePair: Vec<NICQueuePair>,
   pub ipv4Suffix: common::VLANPort,
@@ -169,6 +174,7 @@ struct Transport {
 impl Transport {
   pub fn new() -> Self {
     return Self {
+      name: String::new(),
       nicName: String::new(),
       queuePair: Vec::new(),
       ipv4Suffix: common::VLANPort::new(),
@@ -419,7 +425,7 @@ impl TestNIC {
     return Ok(());
   }
 
-  fn findAndAddName(parentObj: &JsonValue, nameMap: &mut HashMap<String, bool>, kind: &str, parentName: &str)
+  fn findAndAddName(parentObj: &JsonValue, name: &mut String, nameMap: &mut HashMap<String, bool>, kind: &str, parentName: &str)
     -> Result<String, error::Error> {
     debug_assert!(parentObj.is_object());
 
@@ -438,6 +444,7 @@ impl TestNIC {
       match strRef {
         Some(val) => {
           if val.len()>0 {
+            *name = val.clone();
             let fqn = format!("{}.{}", parentName, val);
             if nameMap.contains_key(&fqn) {
               log::error!("'{}' object '{}' duplicate name", kind, fqn);
@@ -471,7 +478,8 @@ impl TestNIC {
       }
 
       // Make fqn for huge page
-      let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::HugePage, parentName) {
+      let mut name = String::new();
+      let fqn = match TestNIC::findAndAddName(item, &mut name, &mut self.nameMap, Tag::HugePage, parentName) {
         Ok(val) => val,
         Err(err) => { return Err(err); }
       };
@@ -487,7 +495,12 @@ impl TestNIC {
       let map: &HashMap<_, _> = item.get().unwrap();
       for (key, value) in map {
         match key.as_str() {
-          Tag::Name => {}
+          Tag::Name => {
+            match TestNIC::jsonString(value, &mut hp.name, &fqn, Tag::HugePage, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
           Tag::PageCount => {
             match TestNIC::jsonInteger(value, &mut hp.pageCount, &fqn, Tag::HugePage, key) {
               Ok(_) => {}
@@ -542,7 +555,8 @@ impl TestNIC {
       }
 
       // Make fqn for child allocator
-      let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::HeapAllocator, parentName) {
+      let mut name = String::new();
+      let fqn = match TestNIC::findAndAddName(item, &mut name, &mut self.nameMap, Tag::HeapAllocator, parentName) {
         Ok(val) => val,
         Err(err) => { return Err(err); }
       };
@@ -558,7 +572,12 @@ impl TestNIC {
       let map: &HashMap<_, _> = item.get().unwrap();
       for (key, value) in map {
         match key.as_str() {
-          Tag::Name => {}
+          Tag::Name => {
+            match TestNIC::jsonString(value, &mut hp.name, &fqn, Tag::HugePage, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
           Tag::SizeKB => {
             match TestNIC::jsonInteger(value, &mut hp.sizeKB, &fqn, Tag::HeapAllocator, key) {
               Ok(_) => {}
@@ -607,7 +626,8 @@ impl TestNIC {
       }
 
       // Make fqn for child allocator
-      let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::ChildAllocator, parentName) {
+      let mut name = String::new();
+      let fqn = match TestNIC::findAndAddName(item, &mut name, &mut self.nameMap, Tag::ChildAllocator, parentName) {
         Ok(val) => val,
         Err(err) => { return Err(err); }
       };
@@ -623,7 +643,12 @@ impl TestNIC {
       let map: &HashMap<_, _> = item.get().unwrap();
       for (key, value) in map {
         match key.as_str() {
-          Tag::Name => {}
+          Tag::Name => {
+            match TestNIC::jsonString(value, &mut hp.name, &fqn, Tag::HugePage, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
           Tag::ParentName => {
             match TestNIC::jsonString(value, &mut hp.parentName, &fqn, Tag::ChildAllocator, key) {
               Ok(_) => {}
@@ -670,7 +695,8 @@ impl TestNIC {
     }
 
     // Make fqn for SRPT
-    let fqn = match TestNIC::findAndAddName(obj, &mut self.nameMap, Tag::SRPT, parentName) {
+    let mut name = String::new();
+    let fqn = match TestNIC::findAndAddName(obj, &mut name, &mut self.nameMap, Tag::SRPT, parentName) {
       Ok(val) => val,
       Err(err) => { return Err(err); }
     };
@@ -681,6 +707,7 @@ impl TestNIC {
     debug_assert!(self.nameMap.contains_key(fqn.as_str()));
     debug_assert!(!self.srptMap.contains_key(fqn.as_str()));
     let hp = self.srptMap.entry(fqn.clone()).or_insert(common::SRPT::new());
+    hp.name = name;
 
     // Process required SRPT fields
     let map: &HashMap<_, _> = obj.get().unwrap();
@@ -762,7 +789,8 @@ impl TestNIC {
     }
 
     // Make fqn for NIC
-    let fqn = match TestNIC::findAndAddName(obj, &mut self.nameMap, Tag::NIC, parentName) {
+    let mut name = String::new();
+    let fqn = match TestNIC::findAndAddName(obj, &mut name, &mut self.nameMap, Tag::NIC, parentName) {
       Ok(val) => val,
       Err(err) => { return Err(err); }
     };
@@ -773,6 +801,7 @@ impl TestNIC {
     debug_assert!(self.nameMap.contains_key(fqn.as_str()));
     debug_assert!(!self.nicMap.contains_key(fqn.as_str()));
     let hp = self.nicMap.entry(fqn.clone()).or_insert(NIC::new());
+    hp.name = name;
 
     // Process required NIC fields
     let map: &HashMap<_, _> = obj.get().unwrap();
@@ -856,7 +885,8 @@ impl TestNIC {
       }
 
       // Make fqn for NIC queue
-      let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::RXQ, parentName) {
+      let mut name = String::new();
+      let fqn = match TestNIC::findAndAddName(item, &mut name, &mut self.nameMap, Tag::RXQ, parentName) {
         Ok(val) => val,
         Err(err) => { return Err(err); }
       };
@@ -867,6 +897,7 @@ impl TestNIC {
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
       debug_assert!(!self.rxqMap.contains_key(fqn.as_str()));
       let hp = self.rxqMap.entry(fqn.clone()).or_insert(NICQueue::new());
+      hp.name = name;
 
       // Find all other key-value pairs
       let map: &HashMap<_, _> = item.get().unwrap();
@@ -921,7 +952,8 @@ impl TestNIC {
       }
 
       // Make fqn for NIC queue
-      let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::TXQ, parentName) {
+      let mut name = String::new();
+      let fqn = match TestNIC::findAndAddName(item, &mut name, &mut self.nameMap, Tag::TXQ, parentName) {
         Ok(val) => val,
         Err(err) => { return Err(err); }
       };
@@ -937,7 +969,12 @@ impl TestNIC {
       let map: &HashMap<_, _> = item.get().unwrap();
       for (key, value) in map {
         match key.as_str() {
-          Tag::Name => {}
+          Tag::Name => {
+            match TestNIC::jsonString(value, &mut hp.name, &fqn, Tag::TXQ, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
           Tag::RingSize => {
             match TestNIC::jsonInteger(value, &mut hp.ringSize, &fqn, Tag::TXQ, key) {
               Ok(_) => {}
@@ -986,7 +1023,8 @@ impl TestNIC {
       }
 
       // Make fqn for transport
-      let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::Transport, parentName) {
+      let mut name = String::new();
+      let fqn = match TestNIC::findAndAddName(item, &mut name, &mut self.nameMap, Tag::Transport, parentName) {
         Ok(val) => val,
         Err(err) => { return Err(err); }
       };
@@ -997,6 +1035,7 @@ impl TestNIC {
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
       debug_assert!(!self.transportMap.contains_key(fqn.as_str()));
       let hp = self.transportMap.entry(fqn.clone()).or_insert(Transport::new());
+      hp.name = name;
 
       // Process required transport fields
       let map: &HashMap<_, _> = item.get().unwrap();
@@ -1109,7 +1148,8 @@ impl TestNIC {
     debug_assert!(item.is_object());
 
     let parentName = "root";
-    let fqn = match TestNIC::findAndAddName(item, &mut self.nameMap, Tag::TransportSet, &parentName) {
+    let mut name = String::new();
+    let fqn = match TestNIC::findAndAddName(item, &mut name, &mut self.nameMap, Tag::TransportSet, &parentName) {
       Ok(val) => val,
       Err(err) => { return Err(err); }
     };

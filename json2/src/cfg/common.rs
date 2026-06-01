@@ -2,6 +2,7 @@ use crate::cfg::limit;
 use crate::err::error;
 
 pub struct HugePage {
+  pub name: String,
   pub pageCount: u32,
   pub pageSizeKB: u32,
   pub byteAlignment: u32,
@@ -12,6 +13,7 @@ pub struct HugePage {
 impl HugePage {
   pub fn new() -> Self {
     Self {
+      name: String::new(),
       pageCount: 0,
       pageSizeKB: 0,
       byteAlignment: 0,
@@ -46,6 +48,7 @@ impl HugePage {
 }
 
 pub struct HeapAllocator {
+  pub name: String,
   pub sizeKB: u32,
   pub byteAlignment: u32,
 }
@@ -53,6 +56,7 @@ pub struct HeapAllocator {
 impl HeapAllocator {
   pub fn new() -> Self {
     Self {
+      name: String::new(),
       sizeKB: 0,
       byteAlignment: 0,
     }
@@ -74,6 +78,7 @@ impl HeapAllocator {
 }
 
 pub struct ChildAllocator {
+  pub name: String,
   pub parentName: String,
   pub sizeKB: u32,
   pub byteAlignment: u32,
@@ -82,6 +87,7 @@ pub struct ChildAllocator {
 impl ChildAllocator {
   pub fn new() -> Self {
     Self {
+      name: String::new(),
       parentName: String::new(),
       sizeKB: 0,
       byteAlignment: 0,
@@ -109,6 +115,7 @@ impl ChildAllocator {
 }
 
 pub struct SRPT {
+  pub name: String,
   pub capacity: u32,
   pub overCommitmentCount: u32,
   pub responseRingCount: u32,
@@ -122,6 +129,7 @@ pub struct SRPT {
 impl SRPT {
   pub fn new() -> Self {
     Self {
+      name: String::new(),
       capacity: 0,
       overCommitmentCount: 0,
       responseRingCount: 0,
