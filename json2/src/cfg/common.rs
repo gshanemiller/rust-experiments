@@ -25,6 +25,7 @@ impl HugePage {
     let mut ret = true;
     let mut found = false;
 
+    ret = ret && self.name.len()>0;
     ret = ret && self.pageCount>0;
     ret = ret && self.byteAlignment>=limit::Constant::ByteAlignmentMin;
     ret = ret && self.byteAlignment<=limit::Constant::ByteAlignmentMax;
@@ -65,6 +66,7 @@ impl HeapAllocator {
   pub fn verify(&self) -> Result<(), error::Error> {
     let mut ret = true;
 
+    ret = ret && self.name.len()>0;
     ret = ret && self.sizeKB>0;
     ret = ret && self.byteAlignment>=limit::Constant::ByteAlignmentMin;
     ret = ret && self.byteAlignment<=limit::Constant::ByteAlignmentMax;
@@ -97,6 +99,7 @@ impl ChildAllocator {
   pub fn verify(&self) -> Result<(), error::Error> {
     let mut ret = true;
 
+    ret = ret && self.name.len()>0;
     ret = ret && self.parentName.len()>0;
     ret = ret && self.sizeKB>0;
     ret = ret && self.byteAlignment>=limit::Constant::ByteAlignmentMin;
@@ -144,6 +147,7 @@ impl SRPT {
   pub fn verify(&self) -> Result<(), error::Error> {
     let mut ret = true;
 
+    ret = ret && self.name.len()>0;
     ret = ret && self.capacity>=limit::Constant::SRPTCapacityMin;
     ret = ret && self.capacity<=limit::Constant::SRPTCapacityMax;
     ret = ret && self.overCommitmentCount>=limit::Constant::SRPTOverCommitmentCountMin;

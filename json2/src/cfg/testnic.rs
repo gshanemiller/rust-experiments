@@ -8,7 +8,6 @@ use std::collections::HashMap;
 struct NIC {
   pub name: String,
   pub macAddress: String,
-  pub srptName: String,
   pub ipv4Address: String,
   pub ipv6Address: String,
   pub pciAddress: String,
@@ -24,7 +23,6 @@ impl NIC {
     Self {
       name: String::new(),
       macAddress: String::new(),
-      srptName: String::new(),
       ipv4Address: String::new(),
       ipv6Address: String::new(),
       pciAddress: String::new(),
@@ -39,8 +37,8 @@ impl NIC {
     let mut ret = true;
     let mut found = false;
 
+    ret = ret && self.name.len()>0;
     ret = ret && self.macAddress.len()>0;
-    ret = ret && self.srptName.len()>0;
     ret = ret && (self.ipv4Address.len()>0 || self.ipv6Address.len()>0);
     ret = ret && self.pciAddress.len()>0;
     ret = ret && self.mtuSizeBytes>=limit::Constant::MTUSizeBytesMin;
@@ -116,6 +114,7 @@ impl NICQueue {
   pub fn verify(&self) -> Result<(), error::Error> {
     let mut ret = true;
 
+    ret = ret && self.name.len()>0;
     ret = ret && self.ringSize>=limit::Constant::RingCountMin;
     ret = ret && self.ringSize<=limit::Constant::RingCountMax;
     ret = ret && self.allocatorName.len()>0;
@@ -158,7 +157,6 @@ impl NICQueuePair {
 
 struct Transport {
   pub name: String,
-  pub nicName: String,
   pub queuePair: Vec<NICQueuePair>,
   pub ipv4Suffix: common::VLANPort,
   pub ipv6Suffix: common::VLANPort,
@@ -168,6 +166,7 @@ struct Transport {
   pub readyCapacity: u32,
   pub reserveCapacity: u32,
   pub allocatorName: String,
+  pub srptScheduleName: String,
   pub cpu: u32,
 }
 
@@ -175,7 +174,6 @@ impl Transport {
   pub fn new() -> Self {
     return Self {
       name: String::new(),
-      nicName: String::new(),
       queuePair: Vec::new(),
       ipv4Suffix: common::VLANPort::new(),
       ipv6Suffix: common::VLANPort::new(),
@@ -185,14 +183,15 @@ impl Transport {
       readyCapacity: 0,
       reserveCapacity: 0,
       allocatorName: String::new(),
+      srptScheduleName: String::new(),
       cpu: 0,
     }
   }
 
-  pub fn verify(&self, nic: &TestNIC) -> Result<(), error::Error> {
+  pub fn verify(&self) -> Result<(), error::Error> {
     let mut ret = true;
 
-    ret = ret && self.nicName.len()>0;
+    ret = ret && self.name.len()>0;
     ret = ret && self.queuePair.len()>0;
     ret = ret && self.callbackCapacity>=limit::Constant::RPCCallbackCapacityMin;
     ret = ret && self.callbackCapacity<=limit::Constant::RPCCallbackCapacityMax;
@@ -201,6 +200,7 @@ impl Transport {
     ret = ret && self.reserveCapacity>=limit::Constant::RPCReserveCapacityMin;
     ret = ret && self.reserveCapacity<=limit::Constant::RPCReserveCapacityMax;
     ret = ret && self.allocatorName.len()>0;
+    ret = ret && self.srptScheduleName.len()>0;
     ret = ret && self.cpu>=limit::Constant::CPUCoreMin;
     ret = ret && self.cpu<=limit::Constant::CPUCoreMax;
 
@@ -244,6 +244,7 @@ impl Tag {
   pub const Name: &str = "Name";
   pub const ParentName: &str = "ParentName";
   pub const AllocatorName: &str = "AllocatorName";
+  pub const SRPTScheduleName: &str = "SRPTScheduleName";
 
   pub const SizeKB : &str = "SizeKB";
   pub const ByteAlignment: &str = "ByteAlignment";
@@ -484,7 +485,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!("verifying  '{}' '{}'", Tag::HugePage, fqn);
+      log::debug!("parsing  '{}' '{}'", Tag::HugePage, fqn);
 
       // Create huge page object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -525,15 +526,6 @@ impl TestNIC {
           }
         }
       }
-
-      // Verify contents
-      match hp.verify() {
-        Ok(()) => {}
-        Err(err) => {
-          log::error!("'{}' object '{}' invalid contents: {:?}", Tag::HugePage, fqn, err);
-          return Err(err);
-        }
-      };
     }
 
     return Ok(());
@@ -561,7 +553,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!("verifying  '{}' '{}'", Tag::HeapAllocator, fqn);
+      log::debug!("parsing  '{}' '{}'", Tag::HeapAllocator, fqn);
 
       // Create child allocator object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -596,15 +588,6 @@ impl TestNIC {
           }
         }
       }
-
-      // Verify contents
-      match hp.verify() {
-        Ok(()) => {}
-        Err(err) => {
-          log::error!("'{}' object '{}' invalid contents: {:?}", Tag::HeapAllocator, fqn, err);
-          return Err(err);
-        }
-      };
     }
 
     return Ok(());
@@ -632,7 +615,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!("verifying  '{}' '{}'", Tag::ChildAllocator, fqn);
+      log::debug!("parsing  '{}' '{}'", Tag::ChildAllocator, fqn);
 
       // Create child allocator object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -673,110 +656,101 @@ impl TestNIC {
           }
         }
       }
-
-      // Verify contents
-      match hp.verify() {
-        Ok(()) => {}
-        Err(err) => {
-          log::error!("'{}' object '{}' invalid contents: {:?}", Tag::ChildAllocator, fqn, err);
-          return Err(err);
-        }
-      };
     }
 
     return Ok(());
   }
 
-  fn parseSRPT(&mut self, parentName: &String, obj: &JsonValue) -> Result<(), error::Error> {
-    // Make sure it's an object
-    if !obj.is_object() {
-      log::error!("'{}' object '{}' not an object", Tag::SRPT, parentName);
+  fn parseSRPT(&mut self, parentName: &String, array: &JsonValue) -> Result<(), error::Error> {
+    // Make sure it's an array
+    if !array.is_array() {
+      log::error!("'{}' object '{}' not an array", Tag::SRPT, parentName);
       return Err(error::Error::JSONSchema);
     }
 
-    // Make fqn for SRPT
-    let mut name = String::new();
-    let fqn = match TestNIC::findAndAddName(obj, &mut name, &mut self.nameMap, Tag::SRPT, parentName) {
-      Ok(val) => val,
-      Err(err) => { return Err(err); }
-    };
+    // Visit each item in ary
+    let ary: &Vec<_> = array.get().unwrap();
+    for item in ary {
+      if !item.is_object() {
+        log::error!("'{}' object '{}' not an array of objects", Tag::SRPT, parentName);
+        return Err(error::Error::JSONSchema);
+      }
 
-    log::debug!("verifying  '{}' '{}'", Tag::SRPT, fqn);
+      // Make fqn for SRPT
+      let mut name = String::new();
+      let fqn = match TestNIC::findAndAddName(item, &mut name, &mut self.nameMap, Tag::SRPT, parentName) {
+        Ok(val) => val,
+        Err(err) => { return Err(err); }
+      };
 
-    // Create SRPT
-    debug_assert!(self.nameMap.contains_key(fqn.as_str()));
-    debug_assert!(!self.srptMap.contains_key(fqn.as_str()));
-    let hp = self.srptMap.entry(fqn.clone()).or_insert(common::SRPT::new());
-    hp.name = name;
+      log::debug!("parsing  '{}' '{}'", Tag::SRPT, fqn);
 
-    // Process required SRPT fields
-    let map: &HashMap<_, _> = obj.get().unwrap();
-    for (key, value) in map {
-      match key.as_str() {
-        Tag::Name => {}
-        Tag::Capacity => {
-          match TestNIC::jsonInteger(value, &mut hp.capacity, &fqn, Tag::SRPT, key) {
-            Ok(_) => {}
-            Err(err) => { return Err(err); }
-          };
-        }
-        Tag::OverCommitmentCount => {
-          match TestNIC::jsonInteger(value, &mut hp.overCommitmentCount, &fqn, Tag::SRPT, key) {
-            Ok(_) => {}
-            Err(err) => { return Err(err); }
-          };
-        }
-        Tag::ResponseRingCount => {
-          match TestNIC::jsonInteger(value, &mut hp.responseRingCount, &fqn, Tag::SRPT, key) {
-            Ok(_) => {}
-            Err(err) => { return Err(err); }
-          };
-        }
-        Tag::RequestRingCount => {
-          match TestNIC::jsonInteger(value, &mut hp.requestRingCount, &fqn, Tag::SRPT, key) {
-            Ok(_) => {}
-            Err(err) => { return Err(err); }
-          };
-        }
-        Tag::CPU => {
-          match TestNIC::jsonInteger(value, &mut hp.cpu, &fqn, Tag::SRPT, key) {
-            Ok(_) => {}
-            Err(err) => { return Err(err); }
-          };
-        }
-        Tag::AllocatorName => {
-          match TestNIC::jsonString(value, &mut hp.allocatorName, &fqn, Tag::SRPT, key) {
-            Ok(_) => {}
-            Err(err) => { return Err(err); }
-          };
-        }
-        Tag::UnscheduledPriority => {
-          match TestNIC::jsonArray(value, &mut hp.unscheduledPriority, &fqn, Tag::SRPT, key) {
-            Ok(_) => {}
-            Err(err) => { return Err(err); }
-          };
-        }
-        Tag::ScheduledPriority => {
-          match TestNIC::jsonArray(value, &mut hp.scheduledPriority, &fqn, Tag::SRPT, key) {
-            Ok(_) => {}
-            Err(err) => { return Err(err); }
-          };
-        }
-        _ => {
-          log::error!("'{}' object '{}.{}' unexpected", Tag::SRPT, fqn, key);
-          return Err(error::Error::JSONSchema);
+      // Create SRPT object
+      debug_assert!(self.nameMap.contains_key(fqn.as_str()));
+      debug_assert!(!self.srptMap.contains_key(fqn.as_str()));
+      let hp = self.srptMap.entry(fqn.clone()).or_insert(common::SRPT::new());
+      hp.name = name;
+
+      // Process required SRPT fields
+      let map: &HashMap<_, _> = item.get().unwrap();
+      for (key, value) in map {
+        match key.as_str() {
+          Tag::Name => {}
+          Tag::Capacity => {
+            match TestNIC::jsonInteger(value, &mut hp.capacity, &fqn, Tag::SRPT, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::OverCommitmentCount => {
+            match TestNIC::jsonInteger(value, &mut hp.overCommitmentCount, &fqn, Tag::SRPT, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::ResponseRingCount => {
+            match TestNIC::jsonInteger(value, &mut hp.responseRingCount, &fqn, Tag::SRPT, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::RequestRingCount => {
+            match TestNIC::jsonInteger(value, &mut hp.requestRingCount, &fqn, Tag::SRPT, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::CPU => {
+            match TestNIC::jsonInteger(value, &mut hp.cpu, &fqn, Tag::SRPT, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::AllocatorName => {
+            match TestNIC::jsonString(value, &mut hp.allocatorName, &fqn, Tag::SRPT, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::UnscheduledPriority => {
+            match TestNIC::jsonArray(value, &mut hp.unscheduledPriority, &fqn, Tag::SRPT, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          Tag::ScheduledPriority => {
+            match TestNIC::jsonArray(value, &mut hp.scheduledPriority, &fqn, Tag::SRPT, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
+          _ => {
+            log::error!("'{}' object '{}.{}' unexpected", Tag::SRPT, fqn, key);
+            return Err(error::Error::JSONSchema);
+          }
         }
       }
     }
-
-    // Verify contents
-    match hp.verify() {
-      Ok(()) => {}
-      Err(err) => {
-        log::error!("'{}' object '{}' invalid contents: {:?}", Tag::SRPT, fqn, err);
-        return Err(err);
-      }
-    };
 
     return Ok(());
   }
@@ -795,7 +769,7 @@ impl TestNIC {
       Err(err) => { return Err(err); }
     };
 
-    log::debug!("verifying  '{}' '{}'", Tag::NIC, fqn);
+    log::debug!("parsing  '{}' '{}'", Tag::NIC, fqn);
 
     // Create nIC
     debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -857,15 +831,6 @@ impl TestNIC {
       }
     }
 
-    // Verify contents
-//  match hp.verify(self) {
-//    Ok(()) => {}
-//    Err(err) => {
-//      log::error!("'{}' object '{}' invalid contents: {:?}", Tag::NIC, fqn, err);
-//      return Err(err);
-//    }
-//  };
-
     return Ok(());
   }
 
@@ -891,7 +856,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!("verifying  '{}' '{}'", Tag::RXQ, fqn);
+      log::debug!("parsing  '{}' '{}'", Tag::RXQ, fqn);
 
       // Create NIC queue object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -922,15 +887,6 @@ impl TestNIC {
           }
         }
       }
-
-      // Verify contents
-      match hp.verify() {
-        Ok(()) => {}
-        Err(err) => {
-          log::error!("'{}' object '{}' invalid contents: {:?}", Tag::RXQ, fqn, err);
-          return Err(err);
-        }
-      };
     }
 
     return Ok(());
@@ -958,7 +914,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!("verifying  '{}' '{}'", Tag::TXQ, fqn);
+      log::debug!("parsing  '{}' '{}'", Tag::TXQ, fqn);
 
       // Create NIC queue object
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -993,15 +949,6 @@ impl TestNIC {
           }
         }
       }
-
-      // Verify contents
-      match hp.verify() {
-        Ok(()) => {}
-        Err(err) => {
-          log::error!("'{}' object '{}' invalid contents: {:?}", Tag::TXQ, fqn, err);
-          return Err(err);
-        }
-      };
     }
 
     return Ok(());
@@ -1029,7 +976,7 @@ impl TestNIC {
         Err(err) => { return Err(err); }
       };
 
-      log::debug!("verifying  '{}' '{}'", Tag::Transport, fqn);
+      log::debug!("parsing  '{}' '{}'", Tag::Transport, fqn);
 
       // Create transport
       debug_assert!(self.nameMap.contains_key(fqn.as_str()));
@@ -1133,6 +1080,12 @@ impl TestNIC {
               Err(err) => { return Err(err); }
             };
           }
+          Tag::SRPTScheduleName => {
+            match TestNIC::jsonString(value, &mut hp.srptScheduleName, &fqn, Tag::TXQ, key) {
+              Ok(_) => {}
+              Err(err) => { return Err(err); }
+            };
+          }
           _ => {
             log::error!("'{}' object '{}.{}' unknown", Tag::Transport, fqn, key);
             return Err(error::Error::JSONSchema);
@@ -1154,7 +1107,7 @@ impl TestNIC {
       Err(err) => { return Err(err); }
     };
 
-    log::debug!("verifying '{}'", fqn);
+    log::debug!("parsing '{}'", fqn);
 
     // Get inner object then find, parse sub-objects
     let map: &HashMap<_, _> = item.get().unwrap();
@@ -1225,6 +1178,90 @@ impl TestNIC {
 
     return Ok(());
   }
+
+  fn verifyObjects(&self) -> Result<(), error::Error> {
+    for (k,v) in &self.nicMap {
+      match v.verify(self) {
+        Ok(_) => {},
+        Err(err) => {
+          log::error!("object '{}' invalid contents: {:?}", k, err);
+          return Err(err);
+        }
+      }
+    }
+
+    for (k,v) in &self.rxqMap {
+      match v.verify() {
+        Ok(_) => {},
+        Err(err) => {
+          log::error!("object '{}' invalid contents: {:?}", k, err);
+          return Err(err);
+        }
+      }
+    }
+
+    for (k,v) in &self.txqMap {
+      match v.verify() {
+        Ok(_) => {},
+        Err(err) => {
+          log::error!("object '{}' invalid contents: {:?}", k, err);
+          return Err(err);
+        }
+      }
+    }
+
+    for (k,v) in &self.srptMap {
+      match v.verify() {
+        Ok(_) => {},
+        Err(err) => {
+          log::error!("object '{}' invalid contents: {:?}", k, err);
+          return Err(err);
+        }
+      }
+    }
+
+    for (k,v) in &self.hugePageMap {
+      match v.verify() {
+        Ok(_) => {},
+        Err(err) => {
+          log::error!("object '{}' invalid contents: {:?}", k, err);
+          return Err(err);
+        }
+      }
+    }
+
+    for (k,v) in &self.heapAllocMap {
+      match v.verify() {
+        Ok(_) => {},
+        Err(err) => {
+          log::error!("object '{}' invalid contents: {:?}", k, err);
+          return Err(err);
+        }
+      }
+    }
+
+    for (k,v) in &self.childAllocMap {
+      match v.verify() {
+        Ok(_) => {},
+        Err(err) => {
+          log::error!("object '{}' invalid contents: {:?}", k, err);
+          return Err(err);
+        }
+      }
+    }
+
+    for (k,v) in &self.transportMap {
+      match v.verify() {
+        Ok(_) => {},
+        Err(err) => {
+          log::error!("object '{}' invalid contents: {:?}", k, err);
+          return Err(err);
+        }
+      }
+    }
+
+    return Ok(());
+  }
 }
 
 impl Verify for TestNIC {
@@ -1268,6 +1305,14 @@ impl Verify for TestNIC {
         Err(err) => { return Err(err); }
       }
     };
+
+    // Do simple verifications not needing cross-verify
+    match self.verifyObjects() {
+      Ok(_) => {},
+      Err(err) => { return Err(err); }
+    };
+    
+
 
     return Ok(());
   }

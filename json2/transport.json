@@ -40,27 +40,29 @@
         }
       ],
 
-      "SRPT": {
-        "Name": "SRPTSchedule",
-        "Capacity": 64,
-        "OverCommitmentCount": 3,
-        "ResponseRingCount": 8,
-        "RequestRingCount": 8,
-        "UnscheduledPriority": [
-          346,
-          1106,
-          2233,
-          3836,
-          14660,
-          16384
-        ],
-        "ScheduledPriority": [
-          20333,
-          4294967295
-        ],
-        "AllocatorName": "Allocator3",
-        "CPU": 3
-      },
+      "SRPT": [
+        {
+          "Name": "DefaultSchedule",
+          "Capacity": 64,
+          "OverCommitmentCount": 3,
+          "ResponseRingCount": 8,
+          "RequestRingCount": 8,
+          "UnscheduledPriority": [
+            346,
+            1106,
+            2233,
+            3836,
+            14660,
+            16384
+          ],
+          "ScheduledPriority": [
+            20333,
+            4294967295
+          ],
+          "AllocatorName": "Allocator3",
+          "CPU": 3
+        }
+      ],
 
       "NIC": {
         "Name": "DefaultNic",
@@ -118,7 +120,8 @@
           "CallbackCapacity": 8,
           "ReadyCapacity": 16,
           "ReserveCapacity": 16,
-          "AllocatorName": "Allocator2"
+          "AllocatorName": "Allocator2",
+          "SRPTScheduleName": "DefaultSchedule"
         }
       ]
     }

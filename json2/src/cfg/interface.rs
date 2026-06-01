@@ -113,7 +113,7 @@ pub trait Verify {
 
   fn parseFile(&mut self, fname: &str) -> Result<(), error::Error> {
     // Read JSON
-    log::info!("read   '{}'", fname);
+    log::info!("reading '{}'", fname);
     let jsonResult = fs::read_to_string(fname);
     let json = match jsonResult {
       Ok(val) => val,
@@ -121,7 +121,7 @@ pub trait Verify {
     };
 
     // Parse JSON
-    log::info!("parse  '{}'", fname);
+    log::info!("parsing json '{}'", fname);
     let mut parser = JsonParser::new(json.chars());
     let jsonObject = match parser.parse() {
       Ok(val) => val,
@@ -129,7 +129,7 @@ pub trait Verify {
     };
 
     // Parse + verify
-    log::info!("verify '{}'", fname);
+    log::info!("parsing json contents '{}'", fname);
     match self.verify(&jsonObject) {
       Ok(()) => {},
       Err(err) => { return Err(err); }
