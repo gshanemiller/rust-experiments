@@ -1354,8 +1354,8 @@ impl TestNIC {
         match util::isCpuOnNumaNode(item.cpu, transportSet.nic.numaNode) {
           Ok(val) => {},
           Err(err) => {
-            log::error!("object '{}' srptSchedule '{}' cpu {} invalid or not on NIC numaNode {}: {:?}", transportSet.name, item.name,
-              item.cpu, transportSet.nic.numaNode, err);
+            log::error!("object '{}' srptSchedule '{}' cpu {} invalid or not on NIC numaNode {}: {:?}",
+              transportSet.name, item.name, item.cpu, transportSet.nic.numaNode, err);
             return Err(err);
           }
         };
@@ -1365,8 +1365,8 @@ impl TestNIC {
         match util::isCpuOnNumaNode(item.cpu, transportSet.nic.numaNode) {
           Ok(val) => {},
           Err(err) => {
-            log::error!("object '{}' transport '{}' cpu {} invalid or not on NIC numaNode {}: {:?}", transportSet.name, item.name,
-              item.cpu, transportSet.nic.numaNode, err);
+            log::error!("object '{}' transport '{}' cpu {} invalid or not on NIC numaNode {}: {:?}",
+              transportSet.name, item.name, item.cpu, transportSet.nic.numaNode, err);
             return Err(err);
           }
         };
@@ -1376,7 +1376,155 @@ impl TestNIC {
     return Ok(());
   }
 
+  fn crossVerifyAllocator(&mut self, transportSet: &TransportSet, name: &String) -> bool {
+    let mut found = false;
+    for allocItem in &transportSet.childAllocVec {
+      if srptItem.allocatorName == allocName.name {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      for allocItem in &transportSet.heapAllocVec {
+        if srptItem.allocatorName == allocName.name {
+          found = true;
+          break;
+        }
+      }
+    }
+    return found;
+  }
+
   fn crossVerify(&mut self) -> Result<(), error::Error> {
+    for transportSet in &self.transportSetVec {
+      // Make sure childAllocator's parent exists
+      for childItem in &transportSet.childAllocVec {
+        let mut found = false;
+        for parentItem in &transportSet.hugePageVec {
+          if childItem.parentName == parentItem.name {
+            found = true;
+            break;
+          }
+        }
+        if !found {
+          log::error!("childAllocator '{}.{}' refers to non-existent huge page '{}'",
+            transportSet.name, child.name, childName.parentName);
+          return Err(error::Error::JSONSchema);
+        }
+      }
+
+      // Make sure srpt allocator exists
+      for srptItem in &transportSet.srptVec {
+        if !self.crossVerifyAllocator(transportSet, srptItem.allocatorName) {
+          log::error!("srpt '{}.{}' refers to non-existent allocator '{}'",
+            transportSet.name, srptItem.name, srptItem.allocatorName);
+          return Err(error::Error::JSONSchema);
+        }
+      }
+
+      // Make sure RXQ allocator exists
+      for qItem in transportSet.rxqVec {
+        if !self.crossVerifyAllocator(transportSet, qItem.allocatorName) {
+          log::error!("RXQ '{}.{}' refers to non-existent allocator '{}'",
+            transportSet.name, qItem.name, qItem.allocatorName);
+          return Err(error::Error::JSONSchema);
+        }
+      }
+
+      // Make sure TXQ allocator exists
+      for qItem in transportSet.txqVec {
+        if !self.crossVerifyAllocator(transportSet, qItem.allocatorName) {
+          log::error!("TXQ '{}.{}' refers to non-existent allocator '{}'",
+            transportSet.name, qItem.name, qItem.allocatorName);
+          return Err(error::Error::JSONSchema);
+        }
+      }
+
+      // Transport checks
+      for transport in &transportSet.transportVec {
+        // Make sure transport allocator exists
+        if !self.crossVerifyAllocator(transportSet, transport.allocatorName) {
+          log::error!("transport '{}.{}' refers to non-existent allocator '{}'",
+            transportSet.name, transport.name, transport.allocatorName);
+          return Err(error::Error::JSONSchema);
+        }
+
+        // Make sure transport srpt schedule exists
+        found = false;
+        for schedItem in &transportSet.srptVec {
+          if transport.srptScheduleName == schedItem.name {
+            found = true;
+            break;
+          }
+        }
+        if !found {
+          log::error!("transport '{}.{}' refers to non-existent srptSchedule '{}'",
+            transportSet.name, transport.name, transport.srptScheduleName);
+          return Err(error::Error::JSONSchema);
+        }
+
+        // Make sure transport queue pair names exist
+        let mut foundRxq = false;
+        let mut foundTxq = false;
+        for pairItem in &transport.queuePair {
+          for qItem in transportSet.rxqVec {
+            if pairItem.rxqName == Item.name {
+              foundRxq = true;
+              break;
+            }
+          }
+          for qItem in transportSet.txqVec {
+            if pairItem.txqName == txqItem.name {
+              foundTxq = true;
+              break;
+            }
+          }
+          if !foundRxq || !foundTxq {
+            log::error!("transport '{}.{}' refers to non-existent RXQ '{}' or TXQ '{}'",
+              transportSet.name, transport.name, pairItem.rxqName, pairItem.txqName);
+            return Err(error::Error::JSONSchema);
+          }
+        }
+      }
+    }
+
+    // Ok
+    return Ok(());
+  }
+
+  fn verifyCardinality(&mut self) -> Result<(), error::Error> {
+    if self.transportSetVec.len()==0 {
+      log::error!("no transport sets are provided (empty)");
+      return Err(error::Error::JSONSchema);
+    }
+
+    for transportSet in &self.transportSetVec {
+      // Check allocators
+      if transportSet.heapAllocVec.len()==0 && transportSet.childAllocVec.len()==0 {
+        log::error!("transport '{}' has no heap or child allocators", transportSet.name);
+        return Err(error::Error::JSONSchema);
+      }
+  
+      // Check RXQ/TXQ
+      if transportSet.rxqVec.len()==0 || transportSet.txqVec.len()==0 {
+        log::error!("transport '{}' omits one or both RXQs (count {}) or TXQs (count {})",
+          transportSet.name, transportSet.rxqVec.len(), transportSet.txqVec.len());
+        return Err(error::Error::JSONSchema);
+      }
+      if transportSet.rxqVec.len()!=transportSet.txqVec.len() {
+        log::error!("transport '{}' RXQ (count {}) TXQ (count {}) must be equal",
+          transportSet.name, transportSet.rxqVec.len(), transportSet.txqVec.len());
+        return Err(error::Error::JSONSchema);
+      }
+
+      // Check SRPT schedules
+      if transportSet.srptVec.len()==0 {
+        log::error!("transport '{}' omits SRPT schedules", transportSet.name);
+        return Err(error::Error::JSONSchema);
+      }
+    }
+
+    // Ok
     return Ok(());
   }
 }
@@ -1433,13 +1581,19 @@ impl Verify for TestNIC {
   }
 
   fn verify(&mut self) -> Result<(), error::Error> {
+    // Cross check cardinality
+    match self.verifyCardinality() {
+      Ok(_) => {},
+      Err(err) => { return Err(err); }
+    };
+
     // Do cross verify
     match self.crossVerify() {
       Ok(_) => {},
       Err(err) => { return Err(err); }
     };
 
-    // Do simple verifications not needing cross-verify
+    // Do per object verifications of content
     match self.verifyObjects() {
       Ok(_) => {},
       Err(err) => { return Err(err); }
