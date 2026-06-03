@@ -155,6 +155,8 @@ impl SRPT {
     ret = ret && self.allocatorName.len()>0;
     ret = ret && self.cpu>=limit::Constant::CPUCoreMin;
     ret = ret && self.cpu<=limit::Constant::CPUCoreMax;
+    ret = ret && self.scheduledPriority.len()==limit::Constant::SRPTScheduledPriorities as usize;
+    ret = ret && self.unscheduledPriority.len()==limit::Constant::SRPTUnscheduledPriorities as usize;
 
     // Make sure non-zero increasing only
     for (i, val) in self.unscheduledPriority.iter().enumerate() {
