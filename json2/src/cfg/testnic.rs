@@ -1255,6 +1255,8 @@ impl TestNIC {
   }
 
   fn verifyObjects(&self) -> Result<(), error::Error> {
+    log::trace!("verify object contents");
+
     for transportSet in &self.transportSetVec {
       match transportSet.nic.verify(self) {
         Ok(_) => {},
@@ -1339,6 +1341,8 @@ impl TestNIC {
   }
 
   fn numaLookups(&mut self) -> Result<(), error::Error> {
+    log::trace!("verify NUMA nodes");
+
     for transportSet in &mut self.transportSetVec {
       match util::pciNumaNode(&transportSet.nic.pciAddress) {
         Ok(val) => { transportSet.nic.numaNode = val; },
@@ -1394,6 +1398,8 @@ impl TestNIC {
   }
 
   fn crossVerify(&mut self) -> Result<(), error::Error> {
+    log::trace!("verify cross references");
+
     #[allow(unused_assignments)]
     let mut found = false;
 
@@ -1494,6 +1500,8 @@ impl TestNIC {
   }
 
   fn verifyCardinality(&mut self) -> Result<(), error::Error> {
+    log::trace!("verify cardinality");
+
     if self.transportSetVec.len()==0 {
       log::error!("no transport sets are provided (empty)");
       return Err(error::Error::JSONSchema);
@@ -1572,16 +1580,16 @@ impl Verify for TestNIC {
       }
     };
 
+    return Ok(());
+  }
+
+  fn verify(&mut self) -> Result<(), error::Error> {
     // Do NUMA lookups
     match self.numaLookups() {
       Ok(_) => {},
       Err(err) => { return Err(err); }
     };
 
-    return Ok(());
-  }
-
-  fn verify(&mut self) -> Result<(), error::Error> {
     // Cross check cardinality
     match self.verifyCardinality() {
       Ok(_) => {},
