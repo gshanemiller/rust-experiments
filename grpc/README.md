@@ -36,3 +36,14 @@ Example: https://crates.io/crates/tonic-build reads "tonic-build: Provides code 
 }"
 
 so which is it? tonic-build (the crate I'm reading) or tonic-prost-build or prost? Guys, get your darn story straight!
+
+# Task File sizes
+
+```
+3.3M  target/release/server
+2.9M  target/release/client
+43M   target/debug/server
+33M   target/debug/client
+```
+
+The release sizes are not too terrible considering the number of imported dependencies for a trivial textbook example 
