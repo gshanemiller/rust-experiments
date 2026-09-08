@@ -17,7 +17,7 @@ This code fragment:
     &["protobuf", "/home/smiller53/local/include"]).unwrap();
 ```
 
-gives an array of protobuf files to codegen in the first arguement (here `protobuf/rpc.proto`), and an array of directories to look in to resolve dependent protobuf files or types (here `protobuf", /home/smiller53/local/include`).
+gives an array of protobuf files to codegen in the first arguement (here `protobuf/rpc.proto`), and an array of directories to look in to resolve dependent protobuf files or types (here `protobuf, /home/smiller53/local/include`).
 
 # Details
 1. Code generated files are written directly into Rust's cache in ./target
