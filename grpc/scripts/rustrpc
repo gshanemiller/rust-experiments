@@ -1,0 +1,25 @@
+#!/bin/bash
+
+if [[ ! -f "Cargo.toml" ]]
+then
+  echo "run from directory containing 'Cargo.toml'"
+  exit 1
+fi
+
+cargo add tokio --features "macros rt-multi-thread"
+cargo add tonic prost tokio-stream tonic-build tonic-prost-build
+
+echo "" >> Cargo.toml
+echo "[build-dependencies]" >> Cargo.toml
+echo "tonic-build = \"0.14.6\"" >> Cargo.toml
+echo "tonic-prost-build = \"0.14.6\"" >> Cargo.toml
+
+cat << EOF > build.rs
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+  // Protobuf translation into build cache
+  tonic_prost_build::configure().compile_protos(
+    &["protobuf/rpc.proto"],
+    &["protobuf", "/home/smiller53/local/include"]).unwrap();
+  return Ok(());
+}
+EOF
