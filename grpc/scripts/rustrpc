@@ -7,7 +7,7 @@ then
 fi
 
 cargo add tokio --features "macros rt-multi-thread"
-cargo add tokio-stream tonic prost tonic-prost tonic-prost-build
+cargo add tokio-stream tonic prost tonic-prost tonic-prost-build prost-types
 
 echo "" >> Cargo.toml
 echo "[build-dependencies]" >> Cargo.toml
