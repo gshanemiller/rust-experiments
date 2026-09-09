@@ -17,13 +17,13 @@ This code fragment:
     &["protobuf", "/home/smiller53/local/include"]).unwrap();
 ```
 
-gives an array of protobuf files to codegen in the first arguement (here `protobuf/rpc.proto`), and an array of directories to look in to resolve dependent protobuf files or types (here `protobuf, /home/smiller53/local/include`).
+gives an array of protobuf files to codegen in the first argument (here `protobuf/rpc.proto`), and an array of directories to look in to resolve dependent protobuf files, messages, or types (here `protobuf, /home/smiller53/local/include`).
 
 # Details
 1. Code generated files are written directly into Rust's cache in ./target
-2. The instructions in the previous section assume `protoc` was pre-installed, and can be found in $PATH by running `which protoc`. All you need to do is download a prebuilt binary from `https://github.com/protocolbuffers/protobuf/releases/tag/v36.1`. My version is `libprotoc v36.1
-3. The instructions in the previous section do NOT require `protoc-gen-rust-grpc` was pre-installed
-4. If you protobuf references non-trivial types like Duration, Any, or messages provided in other files  you will need to include a directory that holds those definitions in the second argument to `tonic_prost_build`. The installation of `protoc` comes with a directory called `google` which I've located under `/home/smiller53/local/include` to resolve Google specific types like Any. Other custom messages presumably appear in their own protobuf files located in the `protobuf` directory together with `protobuf/rpc.proto`
+2. The instructions in the previous section assume `protoc` was pre-installed, and is found in $PATH by running `which protoc`. Download the prebuilt binary from `https://github.com/protocolbuffers/protobuf/releases/tag/v36.1`. My version is `libprotoc v36.1
+3. The instructions in the previous section do NOT require `protoc-gen-rust-grpc`
+4. If your protobuf files reference non-trivial types like Duration, Any, or messages provided in other files you will need to include a directory that holds those definitions in the second argument to `tonic_prost_build` above. `protoc` comes with a directory called `google` which I've located under `/home/smiller53/local/include` to resolve Google specific types like Any. Other custom messages presumably appear in their own protobuf files co-located in the `protobuf` directory with `protobuf/rpc.proto`
 
 # Watch out for the noise
 Developed with help from https://dockyard.com/blog/2025/04/08/grpc-basics-for-rust-developers. Note: documentation on which package(s) are required and what commands should appear in build.rs is in flux. Less politely documentation is uncharacteristically un-rust: it's sloppy, inconsistent
