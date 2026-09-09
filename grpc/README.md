@@ -21,7 +21,7 @@ gives an array of protobuf files to codegen in the first arguement (here `protob
 
 # Details
 1. Code generated files are written directly into Rust's cache in ./target
-2. The instructions in the previous section assume `protoc` was pre-installed, and can be found in $PATH by running `which protoc`. All you need to do is download a prebuilt binary from `https://github.com/protocolbuffers/protobuf/releases/tag/v36.1`. My version is `libprotoc 34.0
+2. The instructions in the previous section assume `protoc` was pre-installed, and can be found in $PATH by running `which protoc`. All you need to do is download a prebuilt binary from `https://github.com/protocolbuffers/protobuf/releases/tag/v36.1`. My version is `libprotoc v36.1
 3. The instructions in the previous section do NOT require `protoc-gen-rust-grpc` was pre-installed
 4. If you protobuf references non-trivial types like Duration, Any, or messages provided in other files  you will need to include a directory that holds those definitions in the second argument to `tonic_prost_build`. The installation of `protoc` comes with a directory called `google` which I've located under `/home/smiller53/local/include` to resolve Google specific types like Any. Other custom messages presumably appear in their own protobuf files located in the `protobuf` directory together with `protobuf/rpc.proto`
 
