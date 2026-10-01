@@ -1,0 +1,12 @@
+[package]
+name = "rpc"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "client"
+path = "src/task/client/main.rs"
+
+[[bin]]
+name = "server"
+path = "src/task/server/main.rs"
