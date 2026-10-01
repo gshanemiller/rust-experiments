@@ -1,0 +1,71 @@
+syntax  = "proto3";
+
+package rpc;
+
+message ProcessId {
+  uint32 uid = 1;
+  uint32 euid = 2;
+  uint32 gid = 3;
+  uint32 guid = 4;
+  int32 pid = 5;
+  int32 ppid = 6;
+  string hostName = 7;
+}
+
+enum WorkflowJobType {
+  WorkflowJobType_LEI_BOOTSTRAP = 0;
+}
+
+enum ResponseStatus {
+  ResponseStatus_OK = 0;
+  ResponseStatus_Err = 1;
+}
+
+enum EventStatus {
+  EventStatus_CREATED = 0;
+  EventStatus_QUEUED = 1;
+  EventStatus_RUNNING = 2;
+  EventStatus_COMPLETE = 3;
+  EventStatus_FAILED = 4;
+  EventStatus_UNKNOWN = 5;
+}
+
+// Client 'id' reports it owns 'eventId' of 'jobId'
+message OwnEventRequest {
+  uint64 eventId = 1;
+  uint64 jobId = 2;
+  ProcessId clientId = 3;
+}
+message OwnEventResponse {
+  ResponseStatus rc = 1;
+}
+
+// Client requests status of 'eventId'
+message EventStatusRequest {
+  uint64 eventId = 1;
+}
+message EventStatusReponse {
+  EventStatus rc = 1;
+}
+
+// 'clientId' reports new 'status' for 'eventId' of 'jobType' 
+message EventStatusUpdateRequest {
+  uint64 eventId = 1;
+  EventStatus status = 2;
+  WorkflowJobType jobType = 3;
+  ProcessId clientId = 4;
+}
+message EventStatusUpdateResponse {
+  EventStatus rc = 1;
+}
+
+message CardinalityRequest {
+  WorkflowJobType jobType = 1;
+}
+message CardinalityResponse {
+  EventStatus rc = 1;
+}
+
+message HeartBeat {
+  ProcessId id = 1;
+}
