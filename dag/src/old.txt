@@ -1,0 +1,228 @@
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum Status {
+  Created,
+  Queued,
+  Running,
+  Complete,
+  Failed,
+}
+
+impl Status {
+  pub fn as_str(&self) -> &'static str {
+    match self {
+      Self::Created => "CREATED",
+      Self::Queued => "QUEUED",
+      Self::Running => "RUNNING",
+      Self::Complete => "COMPLETE",
+      Self::Failed => "FAILED",
+    }
+  }
+
+  pub fn from_str(value: &str) -> Option<Status> {
+    match value {
+      "CREATED" => Some(Self::Created),
+      "QUEUED" => Some(Self::Queued),
+      "RUNNING" => Some(Self::Running),
+      "COMPLETE" => Some(Self::Complete),
+      "FAILED" => Some(Self::Failed),
+      _ => None,
+    }
+  }
+}
+
+#[derive(Debug)]
+pub struct StatusMachine {
+  d_status: Status,
+}
+
+impl StatusMachine {
+  pub fn new() -> Self {
+    Self {
+      d_status: Status::Created,
+    }
+  }
+
+  pub fn newAs(value: Status) -> Self {
+    Self {
+      d_status: value,
+    }
+  }
+
+  pub fn value(&self) -> Status {
+    return self.d_status;
+  }
+
+  pub fn next(&mut self, value: Status) {
+    match self.d_status {
+      Status::Created if value==Status::Queued => {
+        self.d_status = value;
+      },
+      Status::Queued if value==Status::Running => {
+        self.d_status = value;
+      },
+      Status::Running if value==Status::Failed => {
+        self.d_status = value;
+      },
+      Status::Running if value==Status::Complete => {
+        self.d_status = value;
+      },
+      Status::Failed  if value==Status::Running => {
+        self.d_status = value;
+      },
+      _ => {
+        panic!("transition to '{}' from '{}' invalid\n", value.as_str(), self.d_status.as_str());
+      }
+    }
+  }
+}
+
+struct WorkId {                                                                                                         
+  d_jobId: u64,                                                                                                
+  d_taskId: u64,                                                                                                
+}                                                                                                                       
+
+impl WorkId {
+  pub fn newJob(id: u64) -> Self {
+    debug_assert!(id>0);
+
+    Self {
+      d_jobId: id,
+      d_taskId: 0,
+    }
+  }
+
+  pub fn newTask(jobId: u64, taskId: u64) -> Self {
+    debug_assert!(jobId>0);
+    debug_assert!(taskId>0);
+
+    Self {
+      d_jobId: jobId,
+      d_taskId: taskId,
+    }
+  }
+
+  pub fn isJob(&self) -> bool {
+    return self.d_taskId == 0;
+  }
+
+  pub fn isTask(&self) -> bool {
+    return self.d_taskId != 0;
+  }
+
+  pub fn taskInSameJob(&self, id: &WorkId) -> bool {
+    return self.d_jobId==id.d_jobId && id.isTask();
+  }
+
+  pub fn taskId(&self) -> u64 {
+    debug_assert!(id.isTask());
+    return d_taskId;
+  }
+}
+
+impl PartialEq for WorkId {
+  fn eq(&self, other: &WorkId) -> bool {
+    return self.d_jobId == other.d_jobId && self.d_taskId == other.d_taskId;
+  }
+}
+
+#[derive(Debug)]
+struct WorkData {                                                                                                       
+  d_schedule:       u64,                                                                                              
+  d_pid:            u32,                                                                                              
+  d_status:         StatusMachine,
+  d_localDependsOn: Vec<u64>,
+  d_environment:    String,
+  d_schemaBaseName: String,
+}
+
+impl WorkData {
+  pub fn new(schedule: u64, status: Status, schemaBaseName: &str) -> Self {
+    Self {
+      d_schedule: schedule,
+      d_pid: 0,
+      d_status: StatusMachine::newAs(status),
+      d_localDependsOn: vec![],
+      d_environment: String::new(),
+      d_schemaBaseName: schemaBaseName.to_string(),
+    } 
+  }
+
+  pub fn isRunning(&self) -> bool {
+    return self.d_status.value() == Status::Running;
+  }
+
+  pub fn isComplete(&self) -> bool {
+    return self.d_status.value() == Status::Complete;
+  }
+
+  pub fn isFailed(&self) -> bool {
+    return self.d_status.value() == Status::Failed;
+  }
+
+  pub fn localDependsOn(&self) -> &Vec<u64> {
+    return &self.d_localDependsOn;
+  } 
+}
+
+#[derive(Debug)]
+struct Task {
+  d_id: WorkId,
+  d_data: WorkData,
+}
+
+impl Task {
+  pub fn new(id: WorkId, schedule: u64, status: Status, schemaBaseName: &str) -> Self {
+    debug_assert!(id.isTask());
+    Self {
+      d_id: id,
+      d_data: WorkData::new(schedule, status, schemaBaseName),
+    }
+  }
+
+  pub fn id(&self) -> WorkId {
+    return self.d_id;
+  }
+}
+
+#[derive(Debug)]
+struct Job {
+  d_id: WorkId,
+  d_task: Vec<Task>,
+}
+
+impl Job {
+  pub fn new(id: WorkId) -> Self {
+    debug_assert!(id.isJob());
+    Self {
+      d_id: id,
+      d_task: vec![],
+    }
+  }
+
+  pub fn id(&self) -> WorkId {
+    return self.d_id;
+  }
+}
+
+pub fn main() {
+  let jobId = WorkId::newJob(1);
+  let mut job = Job::new(jobId);
+
+  let task1Id = WorkId::newTask(1,1);
+  let task1 = Task::new(task1Id.id(), 1, Status::Queued, "foo");
+  job.addTask(task1);
+
+  let task2Id = WorkId::newTask(1,2);
+  let mut task2 = Task::new(task2Id.id(), 1, Status::Queued, "foo");
+  task2.addLocalDependency(&task1Id);
+  job.addTask(task2);
+
+  let task3Id = WorkId::newTask(1,3);
+  let mut task3 = Task::new(task3Id.id(), 1, Status::Queued, "foo");
+  task3.addLocalDependency(&task2Id);
+  task3.addLocalDependency(&task1Id);
+  println!("{:?}", task3);
+  job.addTask(task3);
+
+  assert!(!job.isCyclic());
+}

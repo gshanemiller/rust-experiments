@@ -18,7 +18,7 @@ enum WorkflowJobType {
 
 enum ResponseStatus {
   ResponseStatus_OK = 0;
-  ResponseStatus_Err = 1;
+  ResponseStatus_ERR = 1;
 }
 
 enum EventStatus {
@@ -30,22 +30,18 @@ enum EventStatus {
   EventStatus_UNKNOWN = 5;
 }
 
+// -----------------------------------------------------
+// Client requests which change server state
+// -----------------------------------------------------
+
 // Client 'id' reports it owns 'eventId' of 'jobId'
 message OwnEventRequest {
-  uint64 eventId = 1;
-  uint64 jobId = 2;
+  uint64 jobId = 1;
+  uint64 eventId = 2;
   ProcessId clientId = 3;
 }
 message OwnEventResponse {
   ResponseStatus rc = 1;
-}
-
-// Client requests status of 'eventId'
-message EventStatusRequest {
-  uint64 eventId = 1;
-}
-message EventStatusReponse {
-  EventStatus rc = 1;
 }
 
 // 'clientId' reports new 'status' for 'eventId' of 'jobType' 
@@ -59,6 +55,20 @@ message EventStatusUpdateResponse {
   EventStatus rc = 1;
 }
 
+// -----------------------------------------------------
+// Client requests which DO NOT change server state
+// -----------------------------------------------------
+
+// Client requests status of 'eventId'
+message EventStatusRequest {
+  uint64 eventId = 1;
+}
+message EventStatusReponse {
+  EventStatus rc = 1;
+}
+
+// Client inquires if running one additional 'jobType' instance permitted
+// Return OK if yes else Err
 message CardinalityRequest {
   WorkflowJobType jobType = 1;
 }

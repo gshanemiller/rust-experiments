@@ -1,5 +1,22 @@
+pub mod pbuf {                                                                                                          
+  include!(concat!(env!("OUT_DIR"), "/rpc.rs"));                                                                   
+}                                                                                                                       
+use prost::Message;                                                                                                     
+
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+
+#[derive(Debug)]
+pub struct Request {
+  payloadSize: usize,
+  payload: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct Reponse {
+  payloadSize: usize,
+  payload: Vec<u8>,
+}
 
 #[derive(Debug)]
 pub struct UserRequest {
