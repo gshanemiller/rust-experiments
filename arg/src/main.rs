@@ -1,4 +1,6 @@
-use std::env;
+#![feature(addr_parse_ascii)]
+
+use std::net;
 use std::ffi::{CString};
 
 #[derive(Debug)]
@@ -16,15 +18,38 @@ struct DBLogin {
 }
 
 impl DBLogin {
-  pub fn new(dbName: &str, param: String) -> Self {
-    Self {                                                                      
-      d_dbName: CString::new(dbName).unwrap(),
-      d_userName: CString::new(param).unwrap(),
-      d_sslPath: CString::new("").unwrap(),
-      d_hostName: CString::new("").unwrap(),
-      d_hostIPV4Address: CString::new("").unwrap(),
-      d_hostIPV4Port: CString::new("").unwrap(),
-    }                                                                           
+  pub fn new(dbName: &str, param: String) -> Result<DBLogin, Error> {
+    // Spec: <userName>:<sslPath>:<hostName>:<ipv4Address>:<ipv4Port>
+    let toks: Vec<_> = param.split(':').collect();
+    if toks.len()!=5 {
+      return Err(Error::BadCmdLine);
+    }
+    for i in 0..toks.len() {
+      if toks[i].is_empty() {
+        return Err(Error::BadCmdLine);
+      }
+    }
+    match u64::from_str_radix(toks[4], 10) {
+      Ok(port) => {
+        if port<1024 || port >49151 {
+          return Err(Error::BadCmdLine);
+        }
+      },
+      Err(_e) => return Err(Error::BadCmdLine),
+    }
+    match net::Ipv4Addr::parse_ascii(toks[3].as_bytes()) {
+      Ok(_val) => {},
+      Err(_e) => return Err(Error::BadCmdLine),
+    }
+    let obj = Self {                                                                      
+      d_dbName: CString::new(dbName).unwrap(),                                  
+      d_userName: CString::new(toks[0].trim()).unwrap(),
+      d_sslPath: CString::new(toks[1].trim()).unwrap(),
+      d_hostName: CString::new(toks[2].trim()).unwrap(),
+      d_hostIPV4Address: CString::new(toks[3].trim()).unwrap(),
+      d_hostIPV4Port: CString::new(toks[4].trim()).unwrap(),
+    };                                                                           
+    return Ok(obj);
   }
 
   pub fn newAdmin(dbName: &str) -> Self {
