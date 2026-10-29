@@ -1,0 +1,50 @@
+Rust
+(gdb) ptype /o obj.d_handle
+/* offset      |    size */  type = struct infinitech::archive::ziputil::z_stream {
+/*      0      |       8 */    next_in: *mut u8,
+/*      8      |       4 */    avail_in: u32,
+/*     12      |       4 */    padding0: u32,
+/*     16      |       8 */    total_in: u64,
+/*     24      |       8 */    next_out: *mut u8,
+/*     32      |       4 */    avail_out: u32,
+/*     36      |       4 */    padding1: u32,
+/*     40      |       8 */    total_out: u64,
+/*     48      |       8 */    msg: *mut i8,
+/*     56      |       8 */    opaque0: u64,
+/*     64      |       8 */    alloc_func: *mut u64,
+/*     72      |       8 */    free_func: *mut u64,
+/*     80      |       8 */    opaque1: u64,
+/*     88      |       4 */    data_type: i32,
+/*     92      |       4 */    padding2: u32,
+/*     96      |       8 */    adler: u64,
+/*    104      |       8 */    reserved: u64,
+
+
+
+
+
+C
+gdb) ptype /o handle
+/* offset      |    size */  type = struct z_stream_s {
+/*      0      |       8 */    Bytef *next_in;
+/*      8      |       4 */    uInt avail_in;
+/* XXX  4-byte hole      */
+/*     16      |       8 */    uLong total_in;
+/*     24      |       8 */    Bytef *next_out;
+/*     32      |       4 */    uInt avail_out;
+/* XXX  4-byte hole      */
+/*     40      |       8 */    uLong total_out;
+/*     48      |       8 */    char *msg;
+/*     56      |       8 */    internal_state *state;
+/*     64      |       8 */    alloc_func zalloc;
+/*     72      |       8 */    free_func zfree;
+/*     80      |       8 */    voidpf opaque;
+/*     88      |       4 */    int data_type;
+/* XXX  4-byte hole      */
+/*     96      |       8 */    uLong adler;
+/*    104      |       8 */    uLong reserved;
+
+                               /* total size (bytes):  112 */
+                             }
+
+

@@ -1,0 +1,4 @@
+g++ -I/usr/include -O0 -g -E unzip.cpp > unzip.e
+
+g++ -I/usr/include -O0 -g -c unzip.cpp -o unzip.o
+g++ unzip.o -o unzip /usr/lib/x86_64-linux-gnu/libz.a
