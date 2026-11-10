@@ -149,10 +149,10 @@ struct TaskTransition<'a> {
 }
 
 struct TaskStatusManager<'a> {
-  d_status          : Status,
-  d_baseSchemaName  : &'a String,
-  d_parent          : &'a mut ParentStatusManager<'a>,
-  d_transition      : &'a [TaskTransition<'a>; 7],
+  d_status            : Status,
+  d_baseSchemaName    : &'a String,
+  d_parent            : &'a mut ParentStatusManager<'a>,
+  d_transition        : &'a [TaskTransition<'a>; 7],
 }
 
 impl<'a> TaskStatusManager<'a> {
@@ -219,7 +219,21 @@ impl<'a> StatusManager for TaskStatusManager<'a> {
   }
 
   fn update(&mut self, newStatus: Status) -> Result<(), MyErr> {
-    return Ok(());
+    for srcIdx in 0..self.d_transition.len() {
+      if self.d_status == self.d_transition[srcIdx].d_currStatus && 
+        newStatus == self.d_transition[srcIdx].d_nextStatus {
+        for prtIdx in 0..self.d_transition[srcIdx].d_parentStatus.len() {
+          if self.d_parent.status() == self.d_transition[srcIdx].d_parentStatus[prtIdx] {
+            self.d_status = newStatus;
+            if let Some(status) = self.d_transition[srcIdx].d_nextParentStatus {
+              return self.d_parent.update(status);
+            }
+            return Ok(());
+          }
+        }
+      }
+    }
+    return Err(MyErr::JobError);
   }
 }
 
