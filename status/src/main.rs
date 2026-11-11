@@ -149,8 +149,10 @@ fn main() {
 
   // Case 1: task happy path Reserved -> Complete
   // Task Reserved -> Invoked
+  t1 = Status::Reserved;
   parentStatus = Status::Queued;
   assert_eq!(Ok(()), parentStatus.updateAsParent(Status::Reserved));
+  assert_eq!(Status::Reserved, parentStatus);
   assert_eq!(Ok(()), t1.updateAsTask(Status::Invoked, &mut parentStatus));
   assert_eq!(Status::Invoked, t1);
   assert_eq!(Status::Running, parentStatus);
@@ -164,9 +166,60 @@ fn main() {
   assert_eq!(Status::Running, parentStatus);
 
   // Case 2: task error case Reserved -> Invalid
-  parentStatus = Status::Queued;
   t1 = Status::Reserved;
+  parentStatus = Status::Queued;
   assert_eq!(Ok(()), parentStatus.updateAsParent(Status::Reserved));
+  assert_eq!(Ok(()), t1.updateAsTask(Status::Invalid, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  // Once parentStatus invalid all transitions must fail
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Queued));
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Reserved));
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Invoked));
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Running));
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Complete));
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Failed));
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Invalid));
+  assert_eq!(Status::Invalid, parentStatus);
+  // Once t1 invalid all transitions must fail
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Queued, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Reserved, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Invoked, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Running, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Complete, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Failed, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Invalid, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+
+  // Case 3: task error case Reserved -> Invoked -> Invalid
+  t1 = Status::Reserved;
+  parentStatus = Status::Queued;
+  assert_eq!(Ok(()), parentStatus.updateAsParent(Status::Reserved));
+  assert_eq!(Status::Reserved, parentStatus);
+  // task Reserved -> Invoked
+  assert_eq!(Ok(()), t1.updateAsTask(Status::Invoked, &mut parentStatus));
+  assert_eq!(Status::Invoked, t1);
+  assert_eq!(Status::Running, parentStatus);
+  // task Invoked -> Invalid
   assert_eq!(Ok(()), t1.updateAsTask(Status::Invalid, &mut parentStatus));
   assert_eq!(Status::Invalid, t1);
   assert_eq!(Status::Invalid, parentStatus);
