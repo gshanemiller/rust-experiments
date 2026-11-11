@@ -137,17 +137,18 @@ impl Status {
         }
       }
     }
-    // Bad transition
+    // Bad transition: everything now invalid
     *self = Status::Invalid;
+    *parentStatus = Status::Invalid;
     return Err(MyErr::JobError);
   }
 }
 
 fn main() {
-  let mut parentStatus = Status::Queued;
-  let mut t1 = Status::Reserved;
+  let mut t1: Status;
+  let mut parentStatus: Status;
 
-  // Case 1: task happy path Reserved -> Complete
+  // Case 1: task happy path Reserved -> Invoked -> Running -> Complete
   // Task Reserved -> Invoked
   t1 = Status::Reserved;
   parentStatus = Status::Queued;
@@ -260,4 +261,86 @@ fn main() {
   assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Invalid, &mut parentStatus));
   assert_eq!(Status::Invalid, t1);
   assert_eq!(Status::Invalid, parentStatus);
+
+  // Case 4: task error case Reserved -> Invoked -> Running -> Failed
+  t1 = Status::Reserved;
+  parentStatus = Status::Queued;
+  assert_eq!(Ok(()), parentStatus.updateAsParent(Status::Reserved));
+  assert_eq!(Status::Reserved, parentStatus);
+  // task Reserved -> Invoked
+  assert_eq!(Ok(()), t1.updateAsTask(Status::Invoked, &mut parentStatus));
+  assert_eq!(Status::Invoked, t1);
+  assert_eq!(Status::Running, parentStatus);
+  // task Invoked -> Running
+  assert_eq!(Ok(()), t1.updateAsTask(Status::Running, &mut parentStatus));
+  assert_eq!(Status::Running, t1);
+  assert_eq!(Status::Running, parentStatus);
+  // task Running -> Failed
+  assert_eq!(Ok(()), t1.updateAsTask(Status::Failed, &mut parentStatus));
+  assert_eq!(Status::Failed, t1);
+  assert_eq!(Status::Failed, parentStatus);
+
+  // Once parentStatus Failed all transitions must fail. There are two things
+  // to check. First, updateAsParent must return an error. Second, because the
+  // transition from Failed -> x is invalid, parentStatus force set to Invalid
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Queued));
+  assert_eq!(Status::Invalid, parentStatus);
+  parentStatus = Status::Failed;
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Reserved));
+  assert_eq!(Status::Invalid, parentStatus);
+  parentStatus = Status::Failed;
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Invoked));
+  assert_eq!(Status::Invalid, parentStatus);
+  parentStatus = Status::Failed;
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Running));
+  assert_eq!(Status::Invalid, parentStatus);
+  parentStatus = Status::Failed;
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Complete));
+  assert_eq!(Status::Invalid, parentStatus);
+  parentStatus = Status::Failed;
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Failed));
+  assert_eq!(Status::Invalid, parentStatus);
+  parentStatus = Status::Failed;
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Invalid));
+  assert_eq!(Status::Invalid, parentStatus);
+  parentStatus = Status::Failed;
+  // Once t1 Failed all transitions must fail. There are three things to check.
+  // First, t1.updateAsTask must return an error. Second, because the transition
+  // from Failed -> x is invalid, t1 force set to Invalid. When t1 force set to
+  // Invalid, so is its parent force set Invalid
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Queued, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  t1 = Status::Failed;
+  parentStatus = Status::Failed;
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Reserved, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  t1 = Status::Failed;
+  parentStatus = Status::Failed;
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Invoked, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  t1 = Status::Failed;
+  parentStatus = Status::Failed;
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Running, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  t1 = Status::Failed;
+  parentStatus = Status::Failed;
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Complete, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  t1 = Status::Failed;
+  parentStatus = Status::Failed;
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Failed, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  t1 = Status::Failed;
+  parentStatus = Status::Failed;
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Invalid, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  t1 = Status::Failed;
+  parentStatus = Status::Failed;
 }
