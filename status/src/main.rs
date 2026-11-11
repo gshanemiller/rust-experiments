@@ -201,6 +201,12 @@ const taskTest: [TaskSetTest; 8] = [
   TaskSetTest{curr: Status::Running, next: Status::Failed, prnt: Status::Running, nextPrnt: Some(Status::Failed),},
 ];
 
+// Reserved->Invalid
+// Reserved->Invoked->Running
+// Reserved->Invoked->Running->Invalid
+// Reserved->Invoked->Running->Complete
+// Reserved->Invoked->Running->Failure
+
 fn testJobStatus() {
   let max = (Status::Invalid as usize) + 1;
   for i in 0..max {
