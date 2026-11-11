@@ -6,6 +6,13 @@ pub enum MyErr {
   JobError
 }
 
+struct TaskTransition<'a> {
+  d_currStatus        : Status,
+  d_nextStatus        : Status,
+  d_parentStatus      : &'a [Status],
+  d_nextParentStatus  : Option<Status>,
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Status {
   Queued,
@@ -18,6 +25,45 @@ pub enum Status {
 }
 
 impl Status {
+  const taskTransition: [TaskTransition<'_>; 6] = [
+    TaskTransition {
+      d_currStatus        : Status::Reserved,
+      d_nextStatus        : Status::Invoked,
+      d_parentStatus      : &[Status::Reserved, Status::Running],
+      d_nextParentStatus  : Some(Status::Running),
+    },
+    TaskTransition {
+      d_currStatus        : Status::Reserved,
+      d_nextStatus        : Status::Invalid,
+      d_parentStatus      : &[Status::Reserved, Status::Running],
+      d_nextParentStatus  : Some(Status::Invalid),
+    },
+    TaskTransition {
+      d_currStatus        : Status::Invoked,
+      d_nextStatus        : Status::Running,
+      d_parentStatus      : &[Status::Running],
+      d_nextParentStatus  : None,
+    },
+    TaskTransition {
+      d_currStatus        : Status::Invoked,
+      d_nextStatus        : Status::Invalid,
+      d_parentStatus      : &[Status::Running],
+      d_nextParentStatus  : Some(Status::Invalid),
+    },
+    TaskTransition {
+      d_currStatus        : Status::Running,
+      d_nextStatus        : Status::Complete,
+      d_parentStatus      : &[Status::Running],
+      d_nextParentStatus  : None,
+    },
+    TaskTransition {
+      d_currStatus        : Status::Running,
+      d_nextStatus        : Status::Failed,
+      d_parentStatus      : &[Status::Running],
+      d_nextParentStatus  : Some(Status::Failed),
+    },
+  ];
+
   pub fn as_str(&self) -> &'static str {
     match self {
       Self::Queued =>   "QUEUED",
@@ -25,9 +71,7 @@ impl Status {
       Self::Invoked =>  "INVOKED",
       Self::Running =>  "RUNNING",
       Self::Complete => "COMPLETE",
-      // Invoked but failed
       Self::Failed =>   "FAILED",
-      // Cannot be invoked
       Self::Invalid =>  "INVALID",
     }
   }
@@ -44,201 +88,123 @@ impl Status {
       _ => None,
     }
   }
-}
 
-pub trait StatusManager {
-  fn status(&self) -> Status;
-  fn baseSchemaName(&mut self) -> &str;
-  fn update(&mut self, newStatus: Status) -> Result<(), MyErr>;
-}
-
-struct JobStatusManager<'a> {
-  d_status          : Status,
-  d_baseSchemaName  : &'a String,
-}
-
-impl<'a> JobStatusManager<'a> {
-  pub fn new(status: Status, baseSchemaName: &'a String) -> Self {
-    debug_assert!(!baseSchemaName.is_empty());
-    Self {
-      d_status          : status,
-      d_baseSchemaName  : baseSchemaName,
-    }
-  }
-}
-
-impl<'a> StatusManager for JobStatusManager<'a> {
-  fn status(&self) -> Status {
-    return self.d_status;
-  }
-
-  fn baseSchemaName(&mut self) -> &str {
-    return self.d_baseSchemaName.as_str();
-  }
-
-  fn update(&mut self, newStatus: Status) -> Result<(), MyErr> {
-    match self.d_status {
-      Status::Queued    if newStatus==Status::Reserved  => self.d_status = newStatus,
-      Status::Reserved  if newStatus==Status::Invoked   => self.d_status = newStatus,
-      Status::Reserved  if newStatus==Status::Invalid   => self.d_status = newStatus,
-      Status::Invoked   if newStatus==Status::Running   => self.d_status = newStatus,
-      Status::Invoked   if newStatus==Status::Invalid   => self.d_status = newStatus,
-      Status::Running   if newStatus==Status::Complete  => self.d_status = newStatus,
-      Status::Running   if newStatus==Status::Failed    => self.d_status = newStatus,
+  fn updateAsJob(&mut self, newStatus: Status) -> Result<(), MyErr> {
+    match *self {
+      Status::Queued    if newStatus==Status::Reserved  => *self = newStatus,
+      Status::Reserved  if newStatus==Status::Invoked   => *self = newStatus,
+      Status::Reserved  if newStatus==Status::Invalid   => *self = newStatus,
+      Status::Invoked   if newStatus==Status::Running   => *self = newStatus,
+      Status::Invoked   if newStatus==Status::Invalid   => *self = newStatus,
+      Status::Running   if newStatus==Status::Complete  => *self = newStatus,
+      Status::Running   if newStatus==Status::Failed    => *self = newStatus,
       _ => {
-        println!("status transition to '{}' from '{}' bad: revert to 'Invalid'\n",
-          newStatus.as_str(), self.d_status.as_str());
-        self.d_status = Status::Invalid;
+        *self = Status::Invalid;
         return Err(MyErr::JobError);
       },
     }
-
     return Ok(());
   }
-}
 
-struct ParentStatusManager<'a> {
-  d_status          : Status,
-  d_baseSchemaName  : &'a String,
-}
-
-impl<'a> ParentStatusManager<'a> {
-  pub fn new(status: Status, baseSchemaName: &'a String) -> Self {
-    debug_assert!(!baseSchemaName.is_empty());
-    Self {
-      d_status          : status,
-      d_baseSchemaName  : baseSchemaName,
-    }
-  }
-}
-
-impl<'a> StatusManager for ParentStatusManager<'a> {
-  fn status(&self) -> Status {
-    return self.d_status;
-  }
-
-  fn baseSchemaName(&mut self) -> &str {
-    return self.d_baseSchemaName.as_str();
-  }
-
-  fn update(&mut self, newStatus: Status) -> Result<(), MyErr> {
-    match self.d_status {
-      Status::Queued    if newStatus==Status::Reserved  => self.d_status = newStatus,
-      Status::Reserved  if newStatus==Status::Running   => self.d_status = newStatus,
-      Status::Reserved  if newStatus==Status::Invalid   => self.d_status = newStatus,
-      Status::Running   if newStatus==Status::Complete  => self.d_status = newStatus,
-      Status::Running   if newStatus==Status::Failed    => self.d_status = newStatus,
-      Status::Running   if newStatus==Status::Invalid   => self.d_status = newStatus,
+  fn updateAsParent(&mut self, newStatus: Status) -> Result<(), MyErr> {
+    match *self {
+      Status::Queued    if newStatus==Status::Reserved  => *self = newStatus,
+      Status::Reserved  if newStatus==Status::Running   => *self = newStatus,
+      Status::Reserved  if newStatus==Status::Invalid   => *self = newStatus,
+      Status::Running   if newStatus==Status::Complete  => *self = newStatus,
+      Status::Running   if newStatus==Status::Failed    => *self = newStatus,
+      Status::Running   if newStatus==Status::Invalid   => *self = newStatus,
       _ => {
-        println!("status transition to '{}' from '{}' for parent bad: revert to 'Invalid'\n",
-          newStatus.as_str(), self.d_status.as_str());
-        self.d_status = Status::Invalid;
+        *self = Status::Invalid;
         return Err(MyErr::JobError);
       },
     }
-
     return Ok(());
   }
-}
 
-struct TaskTransition<'a> {
-  d_currStatus        : Status,
-  d_nextStatus        : Status,
-  d_parentStatus      : &'a [Status],
-  d_nextParentStatus  : Option<Status>,
-}
-
-struct TaskStatusManager<'a> {
-  d_status            : Status,
-  d_baseSchemaName    : &'a String,
-  d_parent            : &'a mut ParentStatusManager<'a>,
-  d_transition        : &'a [TaskTransition<'a>; 7],
-}
-
-impl<'a> TaskStatusManager<'a> {
-  pub fn new(status: Status, baseSchemaName: &'a String, parentStatus: &'a mut ParentStatusManager<'a>) -> Self {
-    Self {
-      d_status          : status,
-      d_baseSchemaName  : baseSchemaName,
-      d_parent          : parentStatus,    
-      d_transition      : &[
-        TaskTransition {
-          d_currStatus        : Status::Queued,
-          d_nextStatus        : Status::Reserved,
-          d_parentStatus      : &[Status::Reserved],
-          d_nextParentStatus  : None,
-        },
-        TaskTransition {
-          d_currStatus        : Status::Reserved,
-          d_nextStatus        : Status::Invoked,
-          d_parentStatus      : &[Status::Reserved, Status::Running],
-          d_nextParentStatus  : Some(Status::Running),
-        },
-        TaskTransition {
-          d_currStatus        : Status::Reserved,
-          d_nextStatus        : Status::Invalid,
-          d_parentStatus      : &[Status::Reserved, Status::Running],
-          d_nextParentStatus  : Some(Status::Invalid),
-        },
-        TaskTransition {
-          d_currStatus        : Status::Invoked,
-          d_nextStatus        : Status::Running,
-          d_parentStatus      : &[Status::Running],
-          d_nextParentStatus  : None,
-        },
-        TaskTransition {
-          d_currStatus        : Status::Invoked,
-          d_nextStatus        : Status::Invalid,
-          d_parentStatus      : &[Status::Running],
-          d_nextParentStatus  : Some(Status::Invalid),
-        },
-        TaskTransition {
-          d_currStatus        : Status::Running,
-          d_nextStatus        : Status::Complete,
-          d_parentStatus      : &[Status::Running],
-          d_nextParentStatus  : None,
-        },
-        TaskTransition {
-          d_currStatus        : Status::Running,
-          d_nextStatus        : Status::Failed,
-          d_parentStatus      : &[Status::Running],
-          d_nextParentStatus  : Some(Status::Failed),
-        },
-      ],
-    }
-  }
-}
-
-impl<'a> StatusManager for TaskStatusManager<'a> {
-  fn status(&self) -> Status {
-    return self.d_status;
-  }
-
-  fn baseSchemaName(&mut self) -> &str {
-    return self.d_baseSchemaName.as_str();
-  }
-
-  fn update(&mut self, newStatus: Status) -> Result<(), MyErr> {
-    for srcIdx in 0..self.d_transition.len() {
-      if self.d_status == self.d_transition[srcIdx].d_currStatus && 
-        newStatus == self.d_transition[srcIdx].d_nextStatus {
-        for prtIdx in 0..self.d_transition[srcIdx].d_parentStatus.len() {
-          if self.d_parent.status() == self.d_transition[srcIdx].d_parentStatus[prtIdx] {
-            self.d_status = newStatus;
-            if let Some(status) = self.d_transition[srcIdx].d_nextParentStatus {
-              return self.d_parent.update(status);
+  fn updateAsTask(&mut self, newStatus: Status, parentStatus: &mut Status) -> Result<(), MyErr> {
+    for srcIdx in 0..Status::taskTransition.len() {
+      if *self == Status::taskTransition[srcIdx].d_currStatus && 
+        newStatus == Status::taskTransition[srcIdx].d_nextStatus {
+        for prtIdx in 0..Status::taskTransition[srcIdx].d_parentStatus.len() {
+          if *parentStatus == Status::taskTransition[srcIdx].d_parentStatus[prtIdx] {
+            *self = newStatus;
+            if let Some(status) = Status::taskTransition[srcIdx].d_nextParentStatus {
+              return parentStatus.updateAsParent(status);
             }
             return Ok(());
           }
         }
       }
     }
+    // Bad transition
+    *self = Status::Invalid;
     return Err(MyErr::JobError);
   }
 }
 
 fn main() {
-  let schemaName = String::from("foo");
-  let mut parentStatus = ParentStatusManager::new(Status::Queued, &schemaName);
-  let mut taskStatus = TaskStatusManager::new(Status::Queued, &schemaName, &mut parentStatus);
+  let mut parentStatus = Status::Queued;
+  let mut t1 = Status::Reserved;
+
+  // Case 1: task happy path Reserved -> Complete
+  // Task Reserved -> Invoked
+  parentStatus = Status::Queued;
+  assert_eq!(Ok(()), parentStatus.updateAsParent(Status::Reserved));
+  assert_eq!(Ok(()), t1.updateAsTask(Status::Invoked, &mut parentStatus));
+  assert_eq!(Status::Invoked, t1);
+  assert_eq!(Status::Running, parentStatus);
+  // Task Invoked -> Running
+  assert_eq!(Ok(()), t1.updateAsTask(Status::Running, &mut parentStatus));
+  assert_eq!(Status::Running, t1);
+  assert_eq!(Status::Running, parentStatus);
+  // Task Running -> Complete
+  assert_eq!(Ok(()), t1.updateAsTask(Status::Complete, &mut parentStatus));
+  assert_eq!(Status::Complete, t1);
+  assert_eq!(Status::Running, parentStatus);
+
+  // Case 2: task error case Reserved -> Invalid
+  parentStatus = Status::Queued;
+  t1 = Status::Reserved;
+  assert_eq!(Ok(()), parentStatus.updateAsParent(Status::Reserved));
+  assert_eq!(Ok(()), t1.updateAsTask(Status::Invalid, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  // Once parentStatus invalid all transitions must fail
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Queued));
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Reserved));
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Invoked));
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Running));
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Complete));
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Failed));
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), parentStatus.updateAsParent(Status::Invalid));
+  assert_eq!(Status::Invalid, parentStatus);
+  // Once t1 invalid all transitions must fail
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Queued, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Reserved, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Invoked, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Running, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Complete, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Failed, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
+  assert_eq!(Err(MyErr::JobError), t1.updateAsTask(Status::Invalid, &mut parentStatus));
+  assert_eq!(Status::Invalid, t1);
+  assert_eq!(Status::Invalid, parentStatus);
 }
