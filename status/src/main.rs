@@ -168,37 +168,37 @@ impl Status {
   }
 }
 
-struct SimpleTest {
+struct JobTest {
   curr  : Status,
   next  : Status,
 }
 
-struct ComplexTest {
+struct TaskSetTest {
   curr      : Status,
   next      : Status,
   prnt      : Status,
   nextPrnt  : Option<Status>,
 }
 
-const jobTest: [SimpleTest; 7] = [
-  SimpleTest{curr: Status::Queued, next: Status::Reserved,},
-  SimpleTest{curr: Status::Reserved, next: Status::Invoked,},
-  SimpleTest{curr: Status::Reserved, next: Status::Invalid,},
-  SimpleTest{curr: Status::Invoked, next: Status::Running,},
-  SimpleTest{curr: Status::Invoked, next: Status::Invalid,},
-  SimpleTest{curr: Status::Running, next: Status::Complete,},
-  SimpleTest{curr: Status::Running, next: Status::Failed,},
+const jobTest: [JobTest; 7] = [
+  JobTest{curr: Status::Queued, next: Status::Reserved,},
+  JobTest{curr: Status::Reserved, next: Status::Invoked,},
+  JobTest{curr: Status::Reserved, next: Status::Invalid,},
+  JobTest{curr: Status::Invoked, next: Status::Running,},
+  JobTest{curr: Status::Invoked, next: Status::Invalid,},
+  JobTest{curr: Status::Running, next: Status::Complete,},
+  JobTest{curr: Status::Running, next: Status::Failed,},
 ];
 
-const parentTest: [ComplexTest; 8] = [
-  ComplexTest{curr: Status::Reserved, next: Status::Invoked, prnt: Status::Reserved, nextPrnt: Some(Status::Running),},
-  ComplexTest{curr: Status::Reserved, next: Status::Invoked, prnt: Status::Running, nextPrnt: None,},
-  ComplexTest{curr: Status::Reserved, next: Status::Invalid, prnt: Status::Reserved, nextPrnt: Some(Status::Invalid),},
-  ComplexTest{curr: Status::Reserved, next: Status::Invalid, prnt: Status::Running, nextPrnt: Some(Status::Invalid),},
-  ComplexTest{curr: Status::Invoked, next: Status::Running, prnt: Status::Running, nextPrnt: None,},
-  ComplexTest{curr: Status::Invoked, next: Status::Invalid, prnt: Status::Running, nextPrnt: Some(Status::Invalid),},
-  ComplexTest{curr: Status::Running, next: Status::Complete, prnt: Status::Running, nextPrnt: None,},
-  ComplexTest{curr: Status::Running, next: Status::Failed, prnt: Status::Running, nextPrnt: Some(Status::Failed),},
+const taskTest: [TaskSetTest; 8] = [
+  TaskSetTest{curr: Status::Reserved, next: Status::Invoked, prnt: Status::Reserved, nextPrnt: Some(Status::Running),},
+  TaskSetTest{curr: Status::Reserved, next: Status::Invoked, prnt: Status::Running, nextPrnt: None,},
+  TaskSetTest{curr: Status::Reserved, next: Status::Invalid, prnt: Status::Reserved, nextPrnt: Some(Status::Invalid),},
+  TaskSetTest{curr: Status::Reserved, next: Status::Invalid, prnt: Status::Running, nextPrnt: Some(Status::Invalid),},
+  TaskSetTest{curr: Status::Invoked, next: Status::Running, prnt: Status::Running, nextPrnt: None,},
+  TaskSetTest{curr: Status::Invoked, next: Status::Invalid, prnt: Status::Running, nextPrnt: Some(Status::Invalid),},
+  TaskSetTest{curr: Status::Running, next: Status::Complete, prnt: Status::Running, nextPrnt: None,},
+  TaskSetTest{curr: Status::Running, next: Status::Failed, prnt: Status::Running, nextPrnt: Some(Status::Failed),},
 ];
 
 fn testJobStatus() {
@@ -226,7 +226,7 @@ fn testJobStatus() {
   }
 }
 
-fn testParentStatus() {
+fn testTaskStatus() {
   let max = (Status::Invalid as usize) + 1;
   for i in 0..max {
     for j in 0..max {
@@ -237,8 +237,8 @@ fn testParentStatus() {
         let mut sidx: usize = 0;
         let mut found = false;
         println!("testParentStatus ({},{},{}) = ({:?},{:?},{:?})", i, j, k, curr, next, prnt); 
-        for s in 0..parentTest.len() {
-          if curr==parentTest[s].curr && next==parentTest[s].next && prnt==parentTest[s].prnt {
+        for s in 0..taskTest.len() {
+          if curr==taskTest[s].curr && next==taskTest[s].next && prnt==taskTest[s].prnt {
             sidx = s;
             found = true;
             break;
@@ -248,7 +248,7 @@ fn testParentStatus() {
           let prntCopy = prnt;
           assert_eq!(Ok(()), curr.updateAsTask(next, &mut prnt));
           assert_eq!(next, curr);
-          if let Some(expectedNextPrnt) = parentTest[sidx].nextPrnt {
+          if let Some(expectedNextPrnt) = taskTest[sidx].nextPrnt {
             assert_eq!(expectedNextPrnt, prnt);
           } else {
             assert_eq!(prntCopy, prnt);
@@ -265,9 +265,9 @@ fn testParentStatus() {
 
 fn testSharedParentStatus() {
 }
-          
+
 fn main() {
   testJobStatus();
-  testParentStatus();
+  testTaskStatus();
   testSharedParentStatus();
 }
