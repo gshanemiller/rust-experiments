@@ -1,3 +1,6 @@
+#![allow(non_snake_case)]                                                                                               
+#![allow(non_upper_case_globals)]                                                                                       
+
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -127,21 +130,57 @@ impl Fsm for MachineA {
 // Demo
 // ---------------------------------------------------------------------------
 
+struct Transition {
+  runLhs  : bool,
+  next    : StateA,
+  prnt    : StateA,
+}
+
+struct Trace {
+  enabled     : bool,
+  sequence    : Vec<Transition>,
+}
+
+impl Trace {
+  fn new() -> Self {
+    Self {
+      enabled     : false,
+      sequence    : vec![],
+    }
+  }
+
+  fn addTransition(&mut self, transition: Transition) {
+    self.sequence.push(transition);
+  }
+
+  fn emit(&self) {
+    println!("  Trace{}enabled: {}, sequence: &[", "{", self.enabled); 
+    for i in 0..self.sequence.len() {
+      println!("    Transition{}runLhs: {}, next: Status::{:?}, prnt: Status::{:?},{},",
+        "{", self.sequence[i].runLhs, self.sequence[i].next, self.sequence[i].prnt, "}")
+    }
+    println!("  ],{},", "}");
+  }
+}
+
 fn main() {
   let a = MachineA;
   let b = MachineA;
 
   let sequences = interleave(&a, &b);
 
-  println!("Found {} interleavings:\n", sequences.len());
-  for (i, seq) in sequences.iter().enumerate() {
-    print!("  {}: Initial A(Reserved) B(Reserved): ", i + 1);
+  println!("const traceTest: [Trace; {}] = [", sequences.len());
+
+  for (_i, seq) in sequences.iter().enumerate() {
+    let mut trace = Trace::new();
     for step in seq {
       match step {
-        Step::A(s) => print!("A({:?}) ", s),
-        Step::B(s) => print!("B({:?}) ", s),
+        Step::A(s) => trace.addTransition(Transition{runLhs: true, next: *s, prnt: StateA::Running,}),
+        Step::B(s) => trace.addTransition(Transition{runLhs: false, next: *s, prnt: StateA::Running,}),
       }
     }
-    println!();
+    trace.emit();
   }
+
+  println!("];");
 }
