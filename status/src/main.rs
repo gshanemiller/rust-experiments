@@ -6,13 +6,6 @@ pub enum MyErr {
   JobError
 }
 
-struct TaskTransition {
-  d_currStatus        : Status,
-  d_nextStatus        : Status,
-  d_parentStatus      : Status,
-  d_nextParentStatus  : Option<Status>,
-}
-
 #[repr(u32)]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Status {
@@ -26,57 +19,6 @@ pub enum Status {
 }
 
 impl Status {
-  const taskTransition: [TaskTransition; 8] = [
-    TaskTransition {
-      d_currStatus        : Status::Reserved,
-      d_nextStatus        : Status::Invoked,
-      d_parentStatus      : Status::Reserved,
-      d_nextParentStatus  : Some(Status::Running),
-    },
-    TaskTransition {
-      d_currStatus        : Status::Reserved,
-      d_nextStatus        : Status::Invoked,
-      d_parentStatus      : Status::Running,
-      d_nextParentStatus  : None,
-    },
-    TaskTransition {
-      d_currStatus        : Status::Reserved,
-      d_nextStatus        : Status::Invalid,
-      d_parentStatus      : Status::Reserved,
-      d_nextParentStatus  : Some(Status::Invalid),
-    },
-    TaskTransition {
-      d_currStatus        : Status::Reserved,
-      d_nextStatus        : Status::Invalid,
-      d_parentStatus      : Status::Running,
-      d_nextParentStatus  : Some(Status::Invalid),
-    },
-    TaskTransition {
-      d_currStatus        : Status::Invoked,
-      d_nextStatus        : Status::Running,
-      d_parentStatus      : Status::Running,
-      d_nextParentStatus  : None,
-    },
-    TaskTransition {
-      d_currStatus        : Status::Invoked,
-      d_nextStatus        : Status::Invalid,
-      d_parentStatus      : Status::Running,
-      d_nextParentStatus  : Some(Status::Invalid),
-    },
-    TaskTransition {
-      d_currStatus        : Status::Running,
-      d_nextStatus        : Status::Complete,
-      d_parentStatus      : Status::Running,
-      d_nextParentStatus  : None,
-    },
-    TaskTransition {
-      d_currStatus        : Status::Running,
-      d_nextStatus        : Status::Failed,
-      d_parentStatus      : Status::Running,
-      d_nextParentStatus  : Some(Status::Failed),
-    },
-  ];
-
   pub fn as_str(&self) -> &'static str {
     match self {
       Self::Queued =>   "QUEUED",
@@ -115,6 +57,18 @@ impl Status {
     }
   }
 
+  const fn jobInitialState() -> Status {
+    return Status::Queued;
+  }
+
+  const fn parentInitialState() -> Status {
+    return Status::Reserved;
+  }
+
+  const fn taskInitialState() -> Status {
+    return Status::Reserved;
+  }
+
   fn updateAsJob(&mut self, newStatus: Status) -> Result<(), MyErr> {
     match *self {
       Status::Queued    if newStatus==Status::Reserved  => *self = newStatus,
@@ -132,14 +86,14 @@ impl Status {
     return Ok(());
   }
 
-  fn updateAsParent(&mut self, newStatus: Status) -> Result<(), MyErr> {
+  fn updateAsTask(&mut self, newStatus: Status) -> Result<(), MyErr> {
     match *self {
-      Status::Queued    if newStatus==Status::Reserved  => *self = newStatus,
-      Status::Reserved  if newStatus==Status::Running   => *self = newStatus,
+      Status::Reserved  if newStatus==Status::Invoked   => *self = newStatus,
       Status::Reserved  if newStatus==Status::Invalid   => *self = newStatus,
+      Status::Invoked   if newStatus==Status::Running   => *self = newStatus,
+      Status::Invoked   if newStatus==Status::Invalid   => *self = newStatus,
       Status::Running   if newStatus==Status::Complete  => *self = newStatus,
       Status::Running   if newStatus==Status::Failed    => *self = newStatus,
-      Status::Running   if newStatus==Status::Invalid   => *self = newStatus,
       _ => {
         *self = Status::Invalid;
         return Err(MyErr::JobError);
@@ -148,23 +102,66 @@ impl Status {
     return Ok(());
   }
 
-  fn updateAsTask(&mut self, newStatus: Status, parentStatus: &mut Status) -> Result<(), MyErr> {
-    for i in 0..Status::taskTransition.len() {
-      if *self == Status::taskTransition[i].d_currStatus && 
-        newStatus == Status::taskTransition[i].d_nextStatus &&
-        *parentStatus == Status::taskTransition[i].d_parentStatus {
-        *self = newStatus;
-        if let Some(status) = Status::taskTransition[i].d_nextParentStatus {
-          return parentStatus.updateAsParent(status);
-        } else {
-          return Ok(());
-        }
+  fn updateAsParent(&mut self, taskStatus: &Vec<Status>) -> Result<(), MyErr> {
+    let mut isInvalid = false;
+    let mut isFailed  = false;
+    let mut isComplete = true;
+    let mut invokedCount: usize = 0;
+    let mut reservedCount: usize = 0;
+    let mut needTransition = false;
+    let mut nextStatus = Status::Invalid;
+
+    // Summarize task statuses
+    for i in 0..taskStatus.len() {
+      // Count tasks in Invoked state
+      invokedCount += (taskStatus[i]==Status::Invoked) as usize;
+      // Count tasks in Reserve state
+      reservedCount += (taskStatus[i]==Status::Reserved) as usize;
+      // Any invalid task makes parent Invalid
+      isInvalid = isInvalid || taskStatus[i]==Status::Invalid;
+      // Any failed task makes parent Failed provided no task Invalid
+      isFailed = isFailed || taskStatus[i]==Status::Failed;
+      // Parent is complete if all tasks Complete
+      isComplete = isComplete && taskStatus[i]==Status::Complete;
+    }
+
+    // println!("Computed final: invokedCount {} reservedCount {} isInvalid {} isFailed {} isComplete {}",
+    //  invokedCount, reservedCount, isInvalid, isFailed, isComplete);
+
+    if *self==Status::Reserved && invokedCount==1 && reservedCount==taskStatus.len()-1 {
+      // First task invocation transitions parent Reserved -> Running
+      needTransition = true;
+      nextStatus = Status::Running;
+    } else if isInvalid  && *self != Status::Invalid {
+      // Any Invalid task state makes parent x -> Invalid
+      needTransition = true;
+      nextStatus = Status::Invalid;
+    } else if isFailed && !isComplete && *self != Status::Failed {
+      // Any Failed task state makes parent x -> Failed provided not Invalid
+      // That is, Invalid takes precedence over Failed
+      needTransition = true;
+      nextStatus = Status::Failed;
+    } else if isComplete && !isFailed && *self != Status::Complete {
+      // If all tasks Complete parent is Complete
+      needTransition = true;
+      nextStatus = Status::Complete;
+    }
+
+    // Validate and enforce 'nextStatus' as needed
+    if needTransition {
+      match *self {
+        Status::Reserved if nextStatus==Status::Running  => *self = nextStatus,
+        Status::Reserved if nextStatus==Status::Invalid  => *self = nextStatus,
+        Status::Running  if nextStatus==Status::Complete => *self = nextStatus,
+        Status::Running  if nextStatus==Status::Failed   => *self = nextStatus,
+        Status::Running  if nextStatus==Status::Invalid  => *self = nextStatus,
+        _ => {
+          *self = Status::Invalid;
+          return Err(MyErr::JobError);
+        },
       }
     }
-    // Bad transition: everything now invalid
-    *self = Status::Invalid;
-    *parentStatus = Status::Invalid;
-    return Err(MyErr::JobError);
+    return Ok(());
   }
 }
 
@@ -173,15 +170,8 @@ struct JobTest {
   next  : Status,
 }
 
-struct TaskSetTest {
-  curr      : Status,
-  next      : Status,
-  prnt      : Status,
-  nextPrnt  : Option<Status>,
-}
-
 const jobTest: [JobTest; 7] = [
-  JobTest{curr: Status::Queued, next: Status::Reserved,},
+  JobTest{curr: Status::jobInitialState(), next: Status::Reserved,},
   JobTest{curr: Status::Reserved, next: Status::Invoked,},
   JobTest{curr: Status::Reserved, next: Status::Invalid,},
   JobTest{curr: Status::Invoked, next: Status::Running,},
@@ -190,22 +180,1109 @@ const jobTest: [JobTest; 7] = [
   JobTest{curr: Status::Running, next: Status::Failed,},
 ];
 
-const taskTest: [TaskSetTest; 8] = [
-  TaskSetTest{curr: Status::Reserved, next: Status::Invoked, prnt: Status::Reserved, nextPrnt: Some(Status::Running),},
-  TaskSetTest{curr: Status::Reserved, next: Status::Invoked, prnt: Status::Running, nextPrnt: None,},
-  TaskSetTest{curr: Status::Reserved, next: Status::Invalid, prnt: Status::Reserved, nextPrnt: Some(Status::Invalid),},
-  TaskSetTest{curr: Status::Reserved, next: Status::Invalid, prnt: Status::Running, nextPrnt: Some(Status::Invalid),},
-  TaskSetTest{curr: Status::Invoked, next: Status::Running, prnt: Status::Running, nextPrnt: None,},
-  TaskSetTest{curr: Status::Invoked, next: Status::Invalid, prnt: Status::Running, nextPrnt: Some(Status::Invalid),},
-  TaskSetTest{curr: Status::Running, next: Status::Complete, prnt: Status::Running, nextPrnt: None,},
-  TaskSetTest{curr: Status::Running, next: Status::Failed, prnt: Status::Running, nextPrnt: Some(Status::Failed),},
-];
+struct Transition {
+  runLhs  : bool,
+  next    : Status,
+  prnt    : Status,
+}
 
-// Reserved->Invalid
-// Reserved->Invoked->Running
-// Reserved->Invoked->Running->Invalid
-// Reserved->Invoked->Running->Complete
-// Reserved->Invoked->Running->Failure
+struct Trace<'a> {
+  enabled     : bool,
+  sequence    : &'a [Transition],
+}
+
+const traceTest: [Trace; 150] = [
+  Trace{enabled: true, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Complete,},
+  ],},
+  Trace{enabled: true, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Failed,},
+  ],},
+  Trace{enabled: true, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Invalid,},
+  ],},
+  Trace{enabled: true, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Invalid,},
+  ],},
+  Trace{enabled: true, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Failed,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Failed,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Failed,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Failed,},
+  ],},
+  Trace{enabled: true, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Failed,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Failed,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Failed,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Failed,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Complete, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Failed, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Complete, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Running, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Failed, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invoked, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+  Trace{enabled: false, sequence: &[
+    Transition{runLhs: false, next: Status::Invalid, prnt: Status::Running,},
+    Transition{runLhs: true, next: Status::Invalid, prnt: Status::Running,},
+  ],},
+];
 
 fn testJobStatus() {
   let max = (Status::Invalid as usize) + 1;
@@ -214,7 +1291,7 @@ fn testJobStatus() {
       let mut curr = Status::from_u32(i as u32).unwrap();
       let next = Status::from_u32(j as u32).unwrap();
       let mut found = false;
-      println!("testJobStatus ({},{}) = ({:?},{:?})", i, j, curr, next); 
+      println!("testJobStatus ({},{})", i, j); 
       for k in 0..jobTest.len() {
         if curr==jobTest[k].curr && next==jobTest[k].next {
           found = true;
@@ -232,48 +1309,31 @@ fn testJobStatus() {
   }
 }
 
-fn testTaskStatus() {
-  let max = (Status::Invalid as usize) + 1;
-  for i in 0..max {
-    for j in 0..max {
-      for k in 0..max {
-        let mut curr = Status::from_u32(i as u32).unwrap();
-        let next = Status::from_u32(j as u32).unwrap();
-        let mut prnt = Status::from_u32(k as u32).unwrap();
-        let mut sidx: usize = 0;
-        let mut found = false;
-        println!("testParentStatus ({},{},{}) = ({:?},{:?},{:?})", i, j, k, curr, next, prnt); 
-        for s in 0..taskTest.len() {
-          if curr==taskTest[s].curr && next==taskTest[s].next && prnt==taskTest[s].prnt {
-            sidx = s;
-            found = true;
-            break;
-          }
-        }
-        if found {
-          let prntCopy = prnt;
-          assert_eq!(Ok(()), curr.updateAsTask(next, &mut prnt));
-          assert_eq!(next, curr);
-          if let Some(expectedNextPrnt) = taskTest[sidx].nextPrnt {
-            assert_eq!(expectedNextPrnt, prnt);
-          } else {
-            assert_eq!(prntCopy, prnt);
-          }
-        } else {
-          assert_eq!(Err(MyErr::JobError), curr.updateAsTask(next, &mut prnt));
-          assert_eq!(Status::Invalid, curr);
-          assert_eq!(Status::Invalid, prnt);
-        }
+fn testSharedParentTaskStatus() {
+  for i in 0..traceTest.len() {
+    if !traceTest[i].enabled {
+      continue;
+    }
+    println!("testSharedParentTaskStatus: run lhs case {}", i);
+    let mut prnt = Status::parentInitialState();
+    let mut taskStatus: Vec<Status> = vec![Status::taskInitialState(), Status::taskInitialState()];
+    for j in 0..traceTest[i].sequence.len() {
+      if traceTest[i].sequence[j].runLhs {
+        assert_eq!(Ok(()), taskStatus[0].updateAsTask(traceTest[i].sequence[j].next));
+        assert_eq!(Ok(()), prnt.updateAsParent(&taskStatus));
+        assert_eq!(traceTest[i].sequence[j].next, taskStatus[0]);
+        assert_eq!(traceTest[i].sequence[j].prnt, prnt);
+      } else {
+        assert_eq!(Ok(()), taskStatus[1].updateAsTask(traceTest[i].sequence[j].next));
+        assert_eq!(Ok(()), prnt.updateAsParent(&taskStatus));
+        assert_eq!(traceTest[i].sequence[j].next, taskStatus[1]);
+        assert_eq!(traceTest[i].sequence[j].prnt, prnt);
       }
     }
   }
 }
 
-fn testSharedParentStatus() {
-}
-
 fn main() {
   testJobStatus();
-  testTaskStatus();
-  testSharedParentStatus();
+  testSharedParentTaskStatus();
 }
