@@ -144,7 +144,7 @@ struct Trace {
 impl Trace {
   fn new() -> Self {
     Self {
-      enabled     : false,
+      enabled     : true,
       sequence    : vec![],
     }
   }
@@ -153,11 +153,24 @@ impl Trace {
     self.sequence.push(transition);
   }
 
-  fn emit(&self) {
+  fn emit(&self, idx: usize) {
+    println!("  // case {}", idx);
     println!("  Trace{}enabled: {}, sequence: &[", "{", self.enabled); 
+    let mut invalidWitness = false;
+    let mut failedWitness = false;
     for i in 0..self.sequence.len() {
+      invalidWitness = invalidWitness || self.sequence[i].next==StateA::Invalid;
+      failedWitness = failedWitness || self.sequence[i].next==StateA::Failed;
+      let prnt: StateA;
+      if invalidWitness {
+        prnt = StateA::Invalid;
+      } else if failedWitness {
+        prnt = StateA::Failed;
+      } else {
+        prnt = StateA::Running;
+      }
       println!("    Transition{}runLhs: {}, next: Status::{:?}, prnt: Status::{:?},{},",
-        "{", self.sequence[i].runLhs, self.sequence[i].next, self.sequence[i].prnt, "}")
+        "{", self.sequence[i].runLhs, self.sequence[i].next, prnt, "}")
     }
     println!("  ],{},", "}");
   }
@@ -171,7 +184,7 @@ fn main() {
 
   println!("const traceTest: [Trace; {}] = [", sequences.len());
 
-  for (_i, seq) in sequences.iter().enumerate() {
+  for (i, seq) in sequences.iter().enumerate() {
     let mut trace = Trace::new();
     for step in seq {
       match step {
@@ -179,7 +192,7 @@ fn main() {
         Step::B(s) => trace.addTransition(Transition{runLhs: false, next: *s, prnt: StateA::Running,}),
       }
     }
-    trace.emit();
+    trace.emit(i);
   }
 
   println!("];");
